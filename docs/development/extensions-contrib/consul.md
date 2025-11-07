@@ -53,23 +53,23 @@ druid.indexer.selector.type=consul
 |--------|---------------|-----------|-------|--------|
 |`druid.discovery.consul.host`|String|Consul agent hostname or IP address.|`localhost`|No|
 |`druid.discovery.consul.port`|Integer|Consul agent HTTP API port.|`8500`|No|
-|`druid.discovery.consul.servicePrefix`|String|Prefix for Consul service names. Used to namespace multiple Druid clusters in the same Consul cluster.|None|Yes|
-|`druid.discovery.consul.aclToken`|String|Consul ACL token for authentication. Required if Consul ACL is enabled.|None|No|
-|`druid.discovery.consul.datacenter`|String|Consul datacenter to use for service registration and discovery.|Default datacenter|No|
+|`druid.discovery.consul.servicePrefix`|String|Prefix for Consul service names; namespaces clusters.|None|Yes|
+|`druid.discovery.consul.aclToken`|String|Consul ACL token for authentication.|None|No|
+|`druid.discovery.consul.datacenter`|String|Consul datacenter for registration and discovery.|Default datacenter|No|
 |`druid.discovery.consul.enableTls`|Boolean|Enable HTTPS/TLS for Consul communication.|`false`|No|
-|`druid.discovery.consul.tlsCertificatePath`|String|Path to client certificate file for mTLS authentication (PEM or PKCS12).|None|No|
-|`druid.discovery.consul.tlsKeyPath`|String|Path to client private key file for mTLS authentication.|None|No|
-|`druid.discovery.consul.tlsCaCertPath`|String|Path to CA certificate file for verifying Consul server certificate.|None|No|
-|`druid.discovery.consul.tlsVerifyHostname`|Boolean|Verify Consul server hostname against certificate. Set to false to disable (insecure).|`true`|No|
+|`druid.discovery.consul.tlsCertificatePath`|String|Path to client certificate file (PEM or PKCS12).|None|No|
+|`druid.discovery.consul.tlsKeyPath`|String|Path to client private key file for TLS.|None|No|
+|`druid.discovery.consul.tlsCaCertPath`|String|Path to CA certificate for server verification.|None|No|
+|`druid.discovery.consul.tlsVerifyHostname`|Boolean|Verify Consul server hostname in certificate.|`true`|No|
 |`druid.discovery.consul.basicAuthUser`|String|Username for HTTP basic authentication.|None|No|
 |`druid.discovery.consul.basicAuthPassword`|String|Password for HTTP basic authentication.|None|No|
-|`druid.discovery.consul.healthCheckInterval`|ISO8601 Duration|How often to update Consul health checks (TTL checks).|`PT10S`|No|
-|`druid.discovery.consul.deregisterAfter`|ISO8601 Duration|How long after health check fails before Consul deregisters the service.|`PT90S`|No|
-|`druid.discovery.consul.watchSeconds`|ISO8601 Duration|How long to block when watching for service changes (Consul blocking query duration).|`PT60S`|No|
-|`druid.discovery.consul.maxWatchRetries`|Long|Maximum number of watch retries before giving up. Set to `Long.MAX_VALUE` for unlimited.|`Long.MAX_VALUE`|No|
-|`druid.discovery.consul.watchRetryDelay`|ISO8601 Duration|How long to wait before retrying after a watch error.|`PT10S`|No|
-|`druid.discovery.consul.coordinatorLeaderLockPath`|String|Consul KV path for Coordinator leader election lock.|`druid/leader/coordinator`|No|
-|`druid.discovery.consul.overlordLeaderLockPath`|String|Consul KV path for Overlord leader election lock.|`druid/leader/overlord`|No|
+|`druid.discovery.consul.healthCheckInterval`|ISO8601 Duration|Update interval for Consul health checks.|`PT10S`|No|
+|`druid.discovery.consul.deregisterAfter`|ISO8601 Duration|Deregister service after health check fails.|`PT90S`|No|
+|`druid.discovery.consul.watchSeconds`|ISO8601 Duration|Blocking query timeout for service changes.|`PT60S`|No|
+|`druid.discovery.consul.maxWatchRetries`|Long|Max watch retries before giving up.|`Long.MAX_VALUE`|No|
+|`druid.discovery.consul.watchRetryDelay`|ISO8601 Duration|Wait time before retrying failed watch.|`PT10S`|No|
+|`druid.discovery.consul.coordinatorLeaderLockPath`|String|Consul KV path for Coordinator leader lock.|`druid/leader/coordinator`|No|
+|`druid.discovery.consul.overlordLeaderLockPath`|String|Consul KV path for Overlord leader lock.|`druid/leader/overlord`|No|
 
 ### Example Configuration
 
@@ -169,6 +169,34 @@ The extension provides leader election for Coordinator and Overlord using Consul
 
 This provides the same ephemeral node behavior as ZooKeeper's leader election, completely removing the need for ZooKeeper in your Druid deployment.
 
+#### Leader Election Timing Details
+
+- **Session TTL**: Automatically calculated as `max(15 seconds, healthCheckInterval × 3)`
+  - Example: If `healthCheckInterval=PT10S`, session TTL = 30 seconds
+  - Minimum session TTL is 15 seconds (Consul requirement)
+  - This determines how long before a failed leader's lock is released
+  
+- **Session Renewal Frequency**: Equals `healthCheckInterval` (default: 10 seconds)
+  - Leaders renew their session at this interval to maintain the lock
+  
+- **Lock Delay**: 5 seconds
+  - After a session is invalidated, prevents immediate re-acquisition of the lock
+  - Reduces lock thrashing during network instability
+  
+- **Leader Failover Time**: Typically between 15-45 seconds
+  - Depends on session TTL and when the failure is detected
+  - In the default configuration (10s health check interval):
+    - Session TTL: 30 seconds
+    - Expected failover: 10-30 seconds after leader failure
+
+#### Network Partition Behavior
+
+During a network partition:
+- If the leader loses connectivity to Consul, its session will expire after the TTL
+- Once the session expires, Consul automatically releases the lock
+- Other candidates can acquire the lock and become leader
+- When network connectivity is restored, the old leader will detect it's no longer the leader and step down
+
 ## Authentication Methods
 
 The extension supports multiple authentication methods for securing communication with Consul:
@@ -204,7 +232,16 @@ druid.discovery.consul.tlsKeyPath=/path/to/client-key.pem
 druid.discovery.consul.tlsVerifyHostname=true
 ```
 
-**Note:** Certificate files can be in PEM or PKCS12 format. For production use with PEM files, you may need to add BouncyCastle to your classpath for proper key parsing.
+**Note:** Certificates can be in PEM or PKCS12 format. For PEM private keys in production, you may need to add BouncyCastle to the extension's classpath:
+
+```bash
+# Download BouncyCastle jars and place in extension directory
+cd $DRUID_HOME/extensions/druid-consul-extensions/
+wget https://repo1.maven.org/maven2/org/bouncycastle/bcprov-jdk15on/1.70/bcprov-jdk15on-1.70.jar
+wget https://repo1.maven.org/maven2/org/bouncycastle/bcpkix-jdk15on/1.70/bcpkix-jdk15on-1.70.jar
+```
+
+Alternatively, use PKCS12 format which is natively supported by Java.
 
 ### 4. Basic Authentication
 
@@ -250,6 +287,8 @@ druid.discovery.consul.aclToken=your-token
 
 If Consul ACL is enabled, the ACL token must have the following permissions:
 
+### For Service Discovery Only
+
 ```hcl
 service "{servicePrefix}-" {
   policy = "write"
@@ -260,23 +299,135 @@ service_prefix "" {
 }
 ```
 
+### For Leader Election (Coordinator/Overlord)
+
+In addition to the service permissions above, the Coordinator and Overlord nodes require KV and session permissions for leader election:
+
+```hcl
+# KV permissions for leader election locks
+key_prefix "druid/leader/" {
+  policy = "write"
+}
+
+# Session permissions for creating and managing Consul sessions
+session_prefix "" {
+  policy = "write"
+}
+```
+
+### Complete ACL Policy Example
+
+For a complete Druid deployment using Consul for both discovery and leader election:
+
+```hcl
+# Service discovery permissions (all nodes)
+service "druid-prod-" {
+  policy = "write"
+}
+
+service_prefix "" {
+  policy = "read"
+}
+
+# Leader election permissions (Coordinator and Overlord only)
+key_prefix "druid/leader/" {
+  policy = "write"
+}
+
+session_prefix "" {
+  policy = "write"
+}
+```
+
+**Note:** You can create separate ACL tokens for different node types:
+- Broker, Historical, MiddleManager: Only need service permissions
+- Coordinator, Overlord: Need both service and leader election permissions
+
 ## Monitoring
+
+### Consul Monitoring
 
 Monitor the following in your Consul cluster:
 - Service registrations for each Druid node role
 - Health check status for all Druid services
 - Consul agent connectivity
+- Leader election locks in KV store (keys under `druid/leader/coordinator` and `druid/leader/overlord`)
+- Session status for Coordinator and Overlord nodes
+
+### Druid Logs
 
 Check Druid logs for:
 - `Successfully announced DiscoveryDruidNode` - Node registered successfully
 - `Failed to announce` - Registration errors
 - `Exception while watching for role` - Discovery errors
+- `Created Consul session [%s] for leader election` - Leader election session created
+- `Failed to renew session` - Session renewal failures (may indicate network issues)
+- `Became leader` / `Lost leadership` - Leader election state changes
+
+### Metrics and Observability
+
+Currently, the extension does not emit custom Druid metrics. Monitoring relies on:
+1. Consul's built-in metrics and health checks
+2. Druid application logs
+3. Consul UI for visualizing service health and registrations
+
+**Recommended Alerts:**
+- Alert when Druid services disappear from Consul catalog
+- Alert when health checks fail for extended periods
+- Alert on frequent leader election changes (indicates instability)
+- Alert when Consul agent becomes unreachable from Druid nodes
 
 ## Limitations
 
 - All Druid nodes must be able to reach the Consul agent
 - Service metadata size is limited by Consul's limits (typically 512KB)
 - Leader election paths must be unique per cluster (configure via `coordinatorLeaderLockPath` and `overlordLeaderLockPath` if running multiple clusters)
+- No custom Druid metrics are emitted for Consul integration; monitoring relies on Consul's metrics and Druid logs
+- For TLS with PEM-encoded private keys, you may need to add BouncyCastle library to the classpath for proper key parsing:
+  ```xml
+  <!-- Add to extension's dependencies if needed -->
+  <dependency>
+    <groupId>org.bouncycastle</groupId>
+    <artifactId>bcpkix-jdk15on</artifactId>
+    <version>1.70</version>
+  </dependency>
+  ```
+
+## Performance and Scalability
+
+### Recommended Cluster Sizes
+
+The Consul extension has been tested with:
+- Small clusters: 1-10 Druid nodes
+- Medium clusters: 10-50 Druid nodes
+- Large clusters: 50+ Druid nodes
+
+For very large clusters (100+ nodes), consider:
+- Using Consul's multi-datacenter features
+- Increasing `watchSeconds` to reduce query load on Consul
+- Running Consul agents in client mode on each Druid node for better performance
+
+### Network Latency Considerations
+
+- **Low latency networks** (< 10ms): Default configuration works well
+- **High latency networks** (> 50ms): 
+  - Increase `healthCheckInterval` to `PT30S` or higher
+  - Increase `watchSeconds` to `PT120S` to reduce blocking query overhead
+  - Monitor session renewal failures in logs
+
+### Tuning for Large Clusters
+
+For clusters with many nodes:
+```properties
+# Reduce health check frequency
+druid.discovery.consul.healthCheckInterval=PT30S
+
+# Increase deregister timeout
+druid.discovery.consul.deregisterAfter=PT180S
+
+# Increase watch timeout for blocking queries
+druid.discovery.consul.watchSeconds=PT120S
+```
 
 ## Implementation Details
 
@@ -331,16 +482,16 @@ The current implementation (Service Catalog) was chosen for its simplicity, nati
 
 ## Comparison with Other Discovery Methods
 
-| Feature | ZooKeeper | Kubernetes | Consul |
-|---------|-----------|------------|--------|
-| Service Discovery | ✓ | ✓ | ✓ |
-| Leader Election | ✓ | ✓ | ✓ |
-| External Dependency | ZooKeeper cluster | Kubernetes cluster | Consul cluster |
-| Health Checking | Session-based | Liveness probes | TTL checks |
-| Leader Election Mechanism | Ephemeral nodes | Leader election API | Sessions + locks |
-| Multi-cluster Support | Via ZK paths | Via namespaces | Via service prefixes + lock paths |
-| TLS/mTLS Support | ✓ | ✓ | ✓ |
-| ACL/RBAC | ✓ | ✓ | ✓ |
+| Feature               | ZooKeeper         | Kubernetes | Consul           |
+|-----------------------|-------------------|------------|------------------|
+| Service Discovery     | ✓                 | ✓ | ✓                |
+| Leader Election       | ✓                 | ✓ | ✓                |
+| External Dependency   | ZooKeeper cluster | Kubernetes cluster | Consul cluster   |
+| Health Checks         | Session based     | Liveness probes | TTL based        |
+| Leader Election       | Ephemeral nodes   | Lease API | Sessions + locks |
+| Multi-cluster Support | ZK paths          | Namespaces | Prefixes + paths |
+| TLS/mTLS Support      | ✓                 | ✓ | ✓                |
+| ACL/RBAC              | ✓                 | ✓ | ✓                |
 
 ## Testing
 
@@ -370,6 +521,7 @@ Check that:
 - `druid.discovery.type=consul` is set
 - Consul agent is reachable from Druid nodes
 - ACL token has correct permissions (if ACL is enabled)
+- Network connectivity between Druid and Consul is stable
 
 ### Health checks failing
 
@@ -377,6 +529,7 @@ Check that:
 - Druid processes are running and healthy
 - Health check interval is appropriate for your network latency
 - Consul agent is not overloaded
+- Time synchronization (NTP) is working across nodes
 
 ### Discovery not detecting changes
 
@@ -384,9 +537,107 @@ Check that:
 - Watch duration is appropriate
 - Network connectivity is stable
 - Consul blocking queries are working correctly
+- Check Druid logs for "Exception while watching for role" messages
+
+### Leader election issues
+
+**Problem: Frequent leader changes**
+- Check network stability between nodes and Consul
+- Increase `healthCheckInterval` to reduce sensitivity
+- Review Consul agent logs for session expiration messages
+- Check time synchronization across nodes
+
+**Problem: No leader elected**
+- Verify `druid.coordinator.selector.type=consul` and `druid.indexer.selector.type=consul` are set
+- Check ACL token has KV and session permissions
+- Verify `coordinatorLeaderLockPath` and `overlordLeaderLockPath` are accessible in Consul KV
+- Check logs for "Failed to create session" or "Failed to acquire lock" errors
+
+**Problem: Split-brain (multiple leaders)**
+- This should not occur with Consul's strong consistency guarantees
+- If observed, check for network partitions and Consul cluster health
+- Verify all nodes are connecting to the same Consul cluster/datacenter
+
+### TLS/mTLS connection failures
+
+- Verify certificate paths are correct and files are readable by Druid process
+- Check certificate validity (not expired)
+- Ensure CA certificate matches Consul server certificate
+- For PEM private keys, ensure BouncyCastle library is on classpath
+- Enable Java SSL debugging: `-Djavax.net.debug=ssl` to diagnose handshake issues
+
+### Migration from ZooKeeper
+
+When migrating from ZooKeeper to Consul:
+
+1. Prepare the new configuration with Consul settings
+2. Stop all Druid services
+3. Update configuration on all nodes
+4. Start Consul cluster (if not already running)
+5. Start Druid services in this order:
+   - Coordinator (verify leader election in Consul UI)
+   - Overlord (verify leader election in Consul UI)
+   - Historical nodes
+   - Broker nodes
+   - MiddleManager/Indexer nodes
+6. Verify all services appear in Consul catalog
+7. Monitor logs for any discovery or leader election errors
+
+**Note:** There is no automatic data migration from ZooKeeper to Consul. Metadata (segments, rules, etc.) is stored in the metadata database, not in ZooKeeper/Consul, so no migration is needed for that data.
+
+## Upgrades and Rolling Restarts
+
+### Upgrading the Extension
+
+When upgrading the Consul extension to a newer version:
+
+1. Stop all Druid services
+2. Replace the extension files in `$DRUID_HOME/extensions/druid-consul-extensions/`
+3. Start services as described in the Migration section above
+
+### Rolling Restarts
+
+For rolling restarts with Consul discovery enabled:
+
+**Safe approach:**
+1. Restart non-leader Coordinators/Overlords first (if running multiple)
+2. Restart Historical nodes one at a time
+3. Restart Broker nodes one at a time
+4. Restart MiddleManager/Indexer nodes
+5. Restart leader Coordinator/Overlord last
+
+**Important:** During rolling restarts:
+- Services will deregister when stopped and re-register when started
+- Other nodes will detect the changes via Consul watch queries
+- Leader election will only be affected when restarting the leader node
+- Expect brief leadership transfer during leader restart (15-45 seconds)
+
+### Rollback Procedure
+
+To rollback from Consul to ZooKeeper:
+
+1. Stop all Druid services
+2. Update configuration files to remove Consul settings and restore ZooKeeper settings:
+   ```properties
+   # Remove these
+   #druid.discovery.type=consul
+   #druid.coordinator.selector.type=consul
+   #druid.indexer.selector.type=consul
+   
+   # Restore these
+   druid.zk.service.host=<zookeeper-host>:2181
+   druid.zk.paths.base=/druid
+   ```
+3. Remove `druid-consul-extensions` from `druid.extensions.loadList`
+4. Start Druid services in normal order
+5. Verify connectivity to ZooKeeper in logs
 
 ## Further Reading
 
 - [Consul Service Discovery](https://www.consul.io/docs/discovery/services)
 - [Consul Health Checks](https://www.consul.io/docs/discovery/checks)
+- [Consul Sessions](https://www.consul.io/docs/dynamic-app-config/sessions)
 - [Consul ACL System](https://www.consul.io/docs/security/acl)
+- [Consul Leader Election](https://learn.hashicorp.com/tutorials/consul/application-leader-elections)
+- [Druid HTTP-based Server View](../../operations/http-compression.md)
+
