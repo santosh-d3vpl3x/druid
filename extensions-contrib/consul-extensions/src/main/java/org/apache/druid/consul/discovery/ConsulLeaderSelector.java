@@ -36,6 +36,7 @@ import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.server.DruidNode;
 
 import javax.annotation.Nullable;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -95,7 +96,7 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
           buildQueryParams()
       );
       if (response != null && response.getValue() != null && response.getValue().getValue() != null) {
-        return new String(Base64.getDecoder().decode(response.getValue().getValue()));
+        return new String(Base64.getDecoder().decode(response.getValue().getValue()), StandardCharsets.UTF_8);
       }
       return null;
     }
