@@ -219,10 +219,12 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
 
         if (leader.get()) {
           // We are leader, renew session periodically
+          //noinspection BusyWait
           Thread.sleep(config.getHealthCheckInterval().getMillis());
           renewSession(sessionId);
         } else {
           // We are not leader, wait before retrying
+          //noinspection BusyWait
           Thread.sleep(config.getHealthCheckInterval().getMillis());
         }
       }
@@ -240,6 +242,7 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
         sessionId = null;
 
         try {
+          //noinspection BusyWait
           Thread.sleep(config.getWatchRetryDelay().getMillis());
         }
         catch (InterruptedException ie) {

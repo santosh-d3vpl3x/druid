@@ -105,6 +105,7 @@ public class DefaultConsulApiClient implements ConsulApiClient
   }
 
   @Override
+  @SuppressWarnings("RedundantThrows")
   public void deregisterService(String serviceId) throws Exception
   {
     consulClient.agentServiceDeregister(serviceId, config.getAclToken());
@@ -112,6 +113,7 @@ public class DefaultConsulApiClient implements ConsulApiClient
   }
 
   @Override
+  @SuppressWarnings({"deprecation", "RedundantThrows"})
   public List<DiscoveryDruidNode> getHealthyServices(NodeRole nodeRole) throws Exception
   {
     String serviceName = makeServiceName(nodeRole);
@@ -126,6 +128,7 @@ public class DefaultConsulApiClient implements ConsulApiClient
   }
 
   @Override
+  @SuppressWarnings({"deprecation", "RedundantThrows"})
   public ConsulWatchResult watchServices(NodeRole nodeRole, long lastIndex, long waitSeconds) throws Exception
   {
     String serviceName = makeServiceName(nodeRole);

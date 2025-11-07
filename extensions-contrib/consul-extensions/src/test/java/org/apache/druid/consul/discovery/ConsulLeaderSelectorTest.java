@@ -45,15 +45,13 @@ public class ConsulLeaderSelectorTest
   private static final String LOCK_KEY = "druid/leader/coordinator";
   private static final String SESSION_ID = "test-session-id";
 
-  private DruidNode selfNode;
-  private ConsulDiscoveryConfig config;
   private ConsulClient mockConsulClient;
   private ConsulLeaderSelector leaderSelector;
 
   @Before
   public void setUp()
   {
-    selfNode = new DruidNode(
+    DruidNode selfNode = new DruidNode(
         "druid/coordinator",
         "test-host",
         true,
@@ -63,7 +61,7 @@ public class ConsulLeaderSelectorTest
         false
     );
 
-    config = new ConsulDiscoveryConfig(
+    ConsulDiscoveryConfig config = new ConsulDiscoveryConfig(
         "localhost",
         8500,
         "druid",
@@ -91,13 +89,13 @@ public class ConsulLeaderSelectorTest
         leaderSelector.unregisterListener();
       }
       catch (Exception e) {
-        // Ignore
+        // Cleanup errors during teardown are not critical, suppress to avoid test failures
       }
     }
   }
 
   @Test
-  public void testGetCurrentLeader() throws Exception
+  public void testGetCurrentLeader()
   {
     String leaderValue = "https://leader-host:8081";
     GetValue getValue = new GetValue();
@@ -122,7 +120,7 @@ public class ConsulLeaderSelectorTest
   }
 
   @Test
-  public void testGetCurrentLeaderNoValue() throws Exception
+  public void testGetCurrentLeaderNoValue()
   {
     Response<GetValue> response = new Response<>(null, 0L, true, 0L);
 
@@ -346,7 +344,7 @@ public class ConsulLeaderSelectorTest
         EasyMock.eq(QueryParams.DEFAULT),
         EasyMock.isNull()
     ))
-            .andReturn(new Response<Session>(null, 0L, true, 0L))
+            .andReturn(new Response<>(null, 0L, true, 0L))
             .anyTimes();
 
     EasyMock.replay(mockConsulClient);
