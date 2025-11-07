@@ -36,6 +36,7 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -67,8 +68,11 @@ public class ConsulLeaderSelectorTest
         "druid",
         null,
         null,
-        null, null,
-        null, null, null, null, null, null, null,
+        null,
+        null,
+        null,
+        null,
+        null,
         Duration.millis(1000),  // Short intervals for testing
         Duration.millis(5000),
         Duration.millis(1000),
@@ -99,7 +103,7 @@ public class ConsulLeaderSelectorTest
   {
     String leaderValue = "https://leader-host:8081";
     GetValue getValue = new GetValue();
-    getValue.setValue(Base64.getEncoder().encodeToString(leaderValue.getBytes()));
+    getValue.setValue(Base64.getEncoder().encodeToString(leaderValue.getBytes(StandardCharsets.UTF_8)));
 
     Response<GetValue> response = new Response<>(getValue, 0L, true, 0L);
 

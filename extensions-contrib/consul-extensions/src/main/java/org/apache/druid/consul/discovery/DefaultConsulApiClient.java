@@ -55,8 +55,8 @@ public class DefaultConsulApiClient implements ConsulApiClient
     this.config = Preconditions.checkNotNull(config, "config");
     this.jsonMapper = Preconditions.checkNotNull(jsonMapper, "jsonMapper");
 
-    // Create basic Consul client (ACL token passed per-request via QueryParams)
-    this.consulClient = new ConsulClient(config.getHost(), config.getPort());
+    // Create Consul client honoring TLS/basic-auth settings when provided
+    this.consulClient = ConsulClients.create(config);
 
     LOGGER.info(
         "Created Consul client for [%s:%d] with service prefix [%s]",
@@ -76,7 +76,7 @@ public class DefaultConsulApiClient implements ConsulApiClient
     service.setId(serviceId);
     service.setName(serviceName);
     service.setAddress(node.getDruidNode().getHost());
-    service.setPort(node.getDruidNode().getPlaintextPort());
+    service.setPort(node.getDruidNode().getPortToUse());
 
     // Add tags
     List<String> tags = new ArrayList<>();
@@ -193,7 +193,7 @@ public class DefaultConsulApiClient implements ConsulApiClient
   {
     return makeServiceName(node.getNodeRole()) + "-" +
            node.getDruidNode().getHost() + "-" +
-           node.getDruidNode().getPlaintextPort();
+           node.getDruidNode().getPortToUse();
   }
 
   private List<DiscoveryDruidNode> parseHealthServices(List<HealthService> healthServices)

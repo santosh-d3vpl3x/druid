@@ -22,6 +22,7 @@ package org.apache.druid.consul.discovery;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Preconditions;
+import org.apache.druid.https.SSLClientConfig;
 import org.joda.time.Duration;
 
 import javax.annotation.Nonnull;
@@ -61,22 +62,8 @@ public class ConsulDiscoveryConfig
   private final String overlordLeaderLockPath;
 
   @JsonProperty
-  private final boolean enableTls;
-
-  @JsonProperty
   @Nullable
-  private final String tlsCertificatePath;
-
-  @JsonProperty
-  @Nullable
-  private final String tlsKeyPath;
-
-  @JsonProperty
-  @Nullable
-  private final String tlsCaCertPath;
-
-  @JsonProperty
-  private final boolean tlsVerifyHostname;
+  private final SSLClientConfig sslClientConfig;
 
   @JsonProperty
   @Nullable
@@ -110,11 +97,7 @@ public class ConsulDiscoveryConfig
       @JsonProperty("datacenter") String datacenter,
       @JsonProperty("coordinatorLeaderLockPath") String coordinatorLeaderLockPath,
       @JsonProperty("overlordLeaderLockPath") String overlordLeaderLockPath,
-      @JsonProperty("enableTls") Boolean enableTls,
-      @JsonProperty("tlsCertificatePath") String tlsCertificatePath,
-      @JsonProperty("tlsKeyPath") String tlsKeyPath,
-      @JsonProperty("tlsCaCertPath") String tlsCaCertPath,
-      @JsonProperty("tlsVerifyHostname") Boolean tlsVerifyHostname,
+      @JsonProperty("sslClientConfig") SSLClientConfig sslClientConfig,
       @JsonProperty("basicAuthUser") String basicAuthUser,
       @JsonProperty("basicAuthPassword") String basicAuthPassword,
       @JsonProperty("healthCheckInterval") Duration healthCheckInterval,
@@ -141,11 +124,7 @@ public class ConsulDiscoveryConfig
     this.overlordLeaderLockPath = overlordLeaderLockPath != null
         ? overlordLeaderLockPath
         : "druid/leader/overlord";
-    this.enableTls = enableTls != null && enableTls;
-    this.tlsCertificatePath = tlsCertificatePath;
-    this.tlsKeyPath = tlsKeyPath;
-    this.tlsCaCertPath = tlsCaCertPath;
-    this.tlsVerifyHostname = tlsVerifyHostname == null || tlsVerifyHostname;
+    this.sslClientConfig = sslClientConfig;
     this.basicAuthUser = basicAuthUser;
     this.basicAuthPassword = basicAuthPassword;
     this.healthCheckInterval = healthCheckInterval == null ? Duration.millis(10000) : healthCheckInterval;
@@ -200,36 +179,10 @@ public class ConsulDiscoveryConfig
   }
 
   @JsonProperty
-  public boolean isEnableTls()
-  {
-    return enableTls;
-  }
-
-  @JsonProperty
   @Nullable
-  public String getTlsCertificatePath()
+  public SSLClientConfig getSslClientConfig()
   {
-    return tlsCertificatePath;
-  }
-
-  @JsonProperty
-  @Nullable
-  public String getTlsKeyPath()
-  {
-    return tlsKeyPath;
-  }
-
-  @JsonProperty
-  @Nullable
-  public String getTlsCaCertPath()
-  {
-    return tlsCaCertPath;
-  }
-
-  @JsonProperty
-  public boolean isTlsVerifyHostname()
-  {
-    return tlsVerifyHostname;
+    return sslClientConfig;
   }
 
   @JsonProperty
@@ -288,17 +241,13 @@ public class ConsulDiscoveryConfig
     ConsulDiscoveryConfig that = (ConsulDiscoveryConfig) o;
     return port == that.port &&
            maxWatchRetries == that.maxWatchRetries &&
-           enableTls == that.enableTls &&
-           tlsVerifyHostname == that.tlsVerifyHostname &&
            host.equals(that.host) &&
            servicePrefix.equals(that.servicePrefix) &&
            Objects.equals(aclToken, that.aclToken) &&
            Objects.equals(datacenter, that.datacenter) &&
            Objects.equals(coordinatorLeaderLockPath, that.coordinatorLeaderLockPath) &&
            Objects.equals(overlordLeaderLockPath, that.overlordLeaderLockPath) &&
-           Objects.equals(tlsCertificatePath, that.tlsCertificatePath) &&
-           Objects.equals(tlsKeyPath, that.tlsKeyPath) &&
-           Objects.equals(tlsCaCertPath, that.tlsCaCertPath) &&
+           Objects.equals(sslClientConfig, that.sslClientConfig) &&
            Objects.equals(basicAuthUser, that.basicAuthUser) &&
            Objects.equals(basicAuthPassword, that.basicAuthPassword) &&
            Objects.equals(healthCheckInterval, that.healthCheckInterval) &&
@@ -318,11 +267,7 @@ public class ConsulDiscoveryConfig
         datacenter,
         coordinatorLeaderLockPath,
         overlordLeaderLockPath,
-        enableTls,
-        tlsCertificatePath,
-        tlsKeyPath,
-        tlsCaCertPath,
-        tlsVerifyHostname,
+        sslClientConfig,
         basicAuthUser,
         basicAuthPassword,
         healthCheckInterval,
@@ -341,8 +286,6 @@ public class ConsulDiscoveryConfig
            ", port=" + port +
            ", servicePrefix='" + servicePrefix + '\'' +
            ", datacenter='" + datacenter + '\'' +
-           ", enableTls=" + enableTls +
-           ", tlsVerifyHostname=" + tlsVerifyHostname +
            ", basicAuthUser='" + basicAuthUser + '\'' +
            ", healthCheckInterval=" + healthCheckInterval +
            ", deregisterAfter=" + deregisterAfter +

@@ -2436,37 +2436,6 @@ DDSketch
 druid-ddsketch
 numBins
 ZGC
-
-- ../docs/development/extensions-contrib/spectator-histogram.md
-SpectatorHistogram
-PercentileBuckets
-spectatorHistogram
-spectatorHistogramTimer
-spectatorHistogramDistribution
-percentileSpectatorHistogram
-percentilesSpectatorHistogram
-
-- ../docs/development/extensions-contrib/ddsketch-quantiles.md
-quantilesFromDDSketch
-quantileFromDDSketch
-collapsingLowestDense
-snapshotVersion
-
-- ../docs/development/extensions-contrib/druid-exact-count-bitmap.md
-Bitmap64ExactCountBuild
-Bitmap64ExactCountMerge
-
-- ../docs/development/extensions-core/catalog.md
-ColumnSpec
-PropertyKeyName
-PropertyValueType
-tableSpec
-TableSpec
-
-- ../docs/development/extensions-contrib/prometheus.md
-TTL
-
-- ../docs/development/extensions-contrib/consul.md
 mTLS
 BouncyCastle
 PKCS12
@@ -2514,3 +2483,44 @@ limits
 50ms
 512KB
 Liveness
+PKCS#1
+PKCS#8
+RSA
+CAs
+PEM
+unencrypted
+Keystores
+keystores
+TrustManagerFactory
+KeyManagerFactory
+
+- ../docs/development/extensions-contrib/spectator-histogram.md
+SpectatorHistogram
+PercentileBuckets
+spectatorHistogram
+spectatorHistogramTimer
+spectatorHistogramDistribution
+percentileSpectatorHistogram
+percentilesSpectatorHistogram
+
+- ../docs/development/extensions-contrib/ddsketch-quantiles.md
+quantilesFromDDSketch
+quantileFromDDSketch
+collapsingLowestDense
+snapshotVersion
+
+- ../docs/development/extensions-contrib/druid-exact-count-bitmap.md
+Bitmap64ExactCountBuild
+Bitmap64ExactCountMerge
+
+- ../docs/development/extensions-core/catalog.md
+ColumnSpec
+PropertyKeyName
+PropertyValueType
+tableSpec
+TableSpec
+
+- ../docs/development/extensions-contrib/prometheus.md
+TTL
+
+

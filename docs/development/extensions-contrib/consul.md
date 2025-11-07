@@ -56,11 +56,6 @@ druid.indexer.selector.type=consul
 |`druid.discovery.consul.servicePrefix`|String|Prefix for Consul service names; namespaces clusters.|None|Yes|
 |`druid.discovery.consul.aclToken`|String|Consul ACL token for authentication.|None|No|
 |`druid.discovery.consul.datacenter`|String|Consul datacenter for registration and discovery.|Default datacenter|No|
-|`druid.discovery.consul.enableTls`|Boolean|Enable HTTPS/TLS for Consul communication.|`false`|No|
-|`druid.discovery.consul.tlsCertificatePath`|String|Path to client certificate file (PEM or PKCS12).|None|No|
-|`druid.discovery.consul.tlsKeyPath`|String|Path to client private key file for TLS.|None|No|
-|`druid.discovery.consul.tlsCaCertPath`|String|Path to CA certificate for server verification.|None|No|
-|`druid.discovery.consul.tlsVerifyHostname`|Boolean|Verify Consul server hostname in certificate.|`true`|No|
 |`druid.discovery.consul.basicAuthUser`|String|Username for HTTP basic authentication.|None|No|
 |`druid.discovery.consul.basicAuthPassword`|String|Password for HTTP basic authentication.|None|No|
 |`druid.discovery.consul.healthCheckInterval`|ISO8601 Duration|Update interval for Consul health checks.|`PT10S`|No|
@@ -70,6 +65,27 @@ druid.indexer.selector.type=consul
 |`druid.discovery.consul.watchRetryDelay`|ISO8601 Duration|Wait time before retrying failed watch.|`PT10S`|No|
 |`druid.discovery.consul.coordinatorLeaderLockPath`|String|Consul KV path for Coordinator leader lock.|`druid/leader/coordinator`|No|
 |`druid.discovery.consul.overlordLeaderLockPath`|String|Consul KV path for Overlord leader lock.|`druid/leader/overlord`|No|
+
+### TLS Configuration
+
+This extension uses Druid's standard TLS configuration for secure HTTPS connections to Consul. To enable TLS, configure the SSL client properties under `druid.discovery.consul.sslClientConfig.*`:
+
+|Property|Description|Default|
+|--------|-----------|-------|
+|`druid.discovery.consul.sslClientConfig.protocol`|SSL/TLS protocol to use.|`TLSv1.2`|
+|`druid.discovery.consul.sslClientConfig.trustStoreType`|Type of truststore (PKCS12, JKS, etc.).|`java.security.KeyStore.getDefaultType()`|
+|`druid.discovery.consul.sslClientConfig.trustStorePath`|Path to truststore for verifying Consul server certificates. [Required for TLS]|None|
+|`druid.discovery.consul.sslClientConfig.trustStoreAlgorithm`|Algorithm for TrustManagerFactory.|`javax.net.ssl.TrustManagerFactory.getDefaultAlgorithm()`|
+|`druid.discovery.consul.sslClientConfig.trustStorePassword`|Password for truststore. Can use [password providers](../../operations/password-provider.md).|None|
+|`druid.discovery.consul.sslClientConfig.keyStoreType`|Type of keystore for client certificate (PKCS12, JKS, etc.).|`java.security.KeyStore.getDefaultType()`|
+|`druid.discovery.consul.sslClientConfig.keyStorePath`|Path to keystore with client certificate for mTLS. [Optional]|None|
+|`druid.discovery.consul.sslClientConfig.keyStorePassword`|Password for keystore. Can use [password providers](../../operations/password-provider.md).|None|
+|`druid.discovery.consul.sslClientConfig.keyManagerPassword`|Password for key manager within keystore. Can use [password providers](../../operations/password-provider.md).|None|
+|`druid.discovery.consul.sslClientConfig.keyManagerFactoryAlgorithm`|Algorithm for KeyManagerFactory.|`javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm()`|
+|`druid.discovery.consul.sslClientConfig.certAlias`|Alias of certificate to use from keystore for mTLS. [Optional]|None|
+|`druid.discovery.consul.sslClientConfig.validateHostnames`|Verify Consul server hostname in certificate.|`true`|
+
+For details on supported keystore formats and additional configuration options, see the [Simple Client SSL Context extension](../../development/extensions-core/simple-client-sslcontext.md) documentation.
 
 ### Example Configuration
 
@@ -105,19 +121,36 @@ druid.discovery.consul.aclToken=your-secret-acl-token
 druid.discovery.consul.datacenter=dc1
 ```
 
-For TLS-enabled Consul with certificate authentication:
+For TLS-enabled Consul with server certificate verification:
 
 ```properties
 druid.discovery.type=consul
 druid.discovery.consul.host=consul.example.com
 druid.discovery.consul.port=8501
 druid.discovery.consul.servicePrefix=druid-prod
-druid.discovery.consul.enableTls=true
-druid.discovery.consul.tlsCaCertPath=/etc/druid/certs/consul-ca.pem
-druid.discovery.consul.tlsCertificatePath=/etc/druid/certs/druid-client.pem
-druid.discovery.consul.tlsKeyPath=/etc/druid/certs/druid-client-key.pem
-druid.discovery.consul.tlsVerifyHostname=true
 druid.discovery.consul.aclToken=your-secret-acl-token
+
+# TLS configuration (standard Druid properties)
+druid.discovery.consul.sslClientConfig.trustStorePath=/etc/druid/certs/consul-ca-truststore.jks
+druid.discovery.consul.sslClientConfig.trustStorePassword=truststore-password
+druid.discovery.consul.sslClientConfig.validateHostnames=true
+```
+
+For Consul with mutual TLS (mTLS) authentication:
+
+```properties
+druid.discovery.type=consul
+druid.discovery.consul.host=consul.example.com
+druid.discovery.consul.port=8501
+druid.discovery.consul.servicePrefix=druid-prod
+druid.discovery.consul.aclToken=your-secret-acl-token
+
+# TLS with client certificates (mutual TLS)
+druid.discovery.consul.sslClientConfig.trustStorePath=/etc/druid/certs/consul-ca-truststore.jks
+druid.discovery.consul.sslClientConfig.trustStorePassword=truststore-password
+druid.discovery.consul.sslClientConfig.keyStorePath=/etc/druid/certs/druid-client-keystore.p12
+druid.discovery.consul.sslClientConfig.keyStorePassword=keystore-password
+druid.discovery.consul.sslClientConfig.validateHostnames=true
 ```
 
 For Consul with basic authentication:
@@ -213,35 +246,69 @@ The token must have appropriate permissions (see Consul ACL Permissions section 
 
 ### 2. TLS/HTTPS with Certificate Verification
 
-For encrypted communication and server verification:
+For encrypted communication and server verification, configure a truststore containing Consul's CA certificate:
 
 ```properties
-druid.discovery.consul.enableTls=true
-druid.discovery.consul.tlsCaCertPath=/path/to/consul-ca.pem
+# TLS configuration using truststore
+druid.discovery.consul.sslClientConfig.protocol=TLSv1.3
+druid.discovery.consul.sslClientConfig.trustStoreType=PKCS12
+druid.discovery.consul.sslClientConfig.trustStorePath=/path/to/truststore.p12
+druid.discovery.consul.sslClientConfig.trustStorePassword=truststore-password
+druid.discovery.consul.sslClientConfig.validateHostnames=true
 ```
 
 ### 3. Mutual TLS (mTLS) Authentication
 
-For strongest security, use client certificates:
+For strongest security, use client certificates in addition to server verification:
 
 ```properties
-druid.discovery.consul.enableTls=true
-druid.discovery.consul.tlsCaCertPath=/path/to/consul-ca.pem
-druid.discovery.consul.tlsCertificatePath=/path/to/client-cert.pem
-druid.discovery.consul.tlsKeyPath=/path/to/client-key.pem
-druid.discovery.consul.tlsVerifyHostname=true
+# TLS with both truststore and keystore (mTLS)
+druid.discovery.consul.sslClientConfig.protocol=TLSv1.3
+
+# Server verification (truststore with Consul CA)
+druid.discovery.consul.sslClientConfig.trustStoreType=PKCS12
+druid.discovery.consul.sslClientConfig.trustStorePath=/path/to/truststore.p12
+druid.discovery.consul.sslClientConfig.trustStorePassword=truststore-password
+
+# Client authentication (keystore with client certificate)
+druid.discovery.consul.sslClientConfig.keyStoreType=PKCS12
+druid.discovery.consul.sslClientConfig.keyStorePath=/path/to/client-keystore.p12
+druid.discovery.consul.sslClientConfig.keyStorePassword=keystore-password
+druid.discovery.consul.sslClientConfig.certAlias=client
+
+# Hostname verification
+druid.discovery.consul.sslClientConfig.validateHostnames=true
 ```
 
-**Note:** Certificates can be in PEM or PKCS12 format. For PEM private keys in production, you may need to add BouncyCastle to the extension's classpath:
+**Creating Keystores from PEM Files:**
+
+If you have PEM certificate and key files, convert them to PKCS12 keystores:
 
 ```bash
-# Download BouncyCastle jars and place in extension directory
-cd $DRUID_HOME/extensions/druid-consul-extensions/
-wget https://repo1.maven.org/maven2/org/bouncycastle/bcprov-jdk15on/1.70/bcprov-jdk15on-1.70.jar
-wget https://repo1.maven.org/maven2/org/bouncycastle/bcpkix-jdk15on/1.70/bcpkix-jdk15on-1.70.jar
+# 1. Create client keystore from PEM certificate and private key
+openssl pkcs12 -export \
+  -in client-cert.pem \
+  -inkey client-key.pem \
+  -out client-keystore.p12 \
+  -name client \
+  -passout pass:keystore-password
+
+# 2. Create truststore from Consul CA certificate
+keytool -import \
+  -file consul-ca.pem \
+  -alias consul-ca \
+  -keystore truststore.p12 \
+  -storetype PKCS12 \
+  -storepass truststore-password \
+  -noprompt
 ```
 
-Alternatively, use PKCS12 format which is natively supported by Java.
+**Notes:**
+- Both JKS and PKCS12 keystore types are supported
+- PKCS12 is recommended as the industry standard  
+- Keystores can contain both encrypted and unencrypted private keys
+- The `certAlias` must match the alias used when creating the keystore (e.g., "client" in the example above)
+- If hostname verification is not desired (e.g., lab environments), set `validateHostnames=false`
 
 ### 4. Basic Authentication
 
@@ -383,15 +450,7 @@ Currently, the extension does not emit custom Druid metrics. Monitoring relies o
 - Service metadata size is limited by Consul's limits (typically 512KB)
 - Leader election paths must be unique per cluster (configure via `coordinatorLeaderLockPath` and `overlordLeaderLockPath` if running multiple clusters)
 - No custom Druid metrics are emitted for Consul integration; monitoring relies on Consul's metrics and Druid logs
-- For TLS with PEM-encoded private keys, you may need to add BouncyCastle library to the classpath for proper key parsing:
-  ```xml
-  <!-- Add to extension's dependencies if needed -->
-  <dependency>
-    <groupId>org.bouncycastle</groupId>
-    <artifactId>bcpkix-jdk15on</artifactId>
-    <version>1.70</version>
-  </dependency>
-  ```
+- For TLS configuration, Java keystores (PKCS12 or JKS) are recommended over PEM files for better compatibility
 
 ## Performance and Scalability
 
@@ -563,7 +622,8 @@ Check that:
 - Verify certificate paths are correct and files are readable by Druid process
 - Check certificate validity (not expired)
 - Ensure CA certificate matches Consul server certificate
-- For PEM private keys, ensure BouncyCastle library is on classpath
+- For Java keystores, verify the keystore type, password, and certificate alias are correct
+- For PEM files, ensure files are properly formatted (both PKCS#1 and PKCS#8 formats are supported)
 - Enable Java SSL debugging: `-Djavax.net.debug=ssl` to diagnose handshake issues
 
 ### Migration from ZooKeeper
@@ -640,4 +700,3 @@ To rollback from Consul to ZooKeeper:
 - [Consul ACL System](https://www.consul.io/docs/security/acl)
 - [Consul Leader Election](https://learn.hashicorp.com/tutorials/consul/application-leader-elections)
 - [Druid HTTP-based Server View](../../operations/http-compression.md)
-

@@ -69,8 +69,11 @@ public class ConsulLeaderElectionIntTest
       "druid-test",
       null,
       null,
-      null, null,
-      null, null, null, null, null, null, null,
+      null,
+      null,
+      null,
+      null,
+      null,
       Duration.millis(5000),  // Fast intervals for testing
       Duration.millis(30000),
       Duration.millis(10000),

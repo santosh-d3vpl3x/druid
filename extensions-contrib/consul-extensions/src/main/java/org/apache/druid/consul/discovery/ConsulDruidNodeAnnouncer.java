@@ -138,9 +138,13 @@ public class ConsulDruidNodeAnnouncer implements DruidNodeAnnouncer
     for (Map.Entry<String, DiscoveryDruidNode> entry : announcedNodes.entrySet()) {
       String serviceId = entry.getKey();
       try {
-        // Update TTL check to keep service healthy
+        // Update TTL check to keep service healthy (include ACL token when configured)
         com.ecwid.consul.v1.ConsulClient client = getConsulClient();
-        client.agentCheckPass("service:" + serviceId, "Druid node is healthy");
+        client.agentCheckPass(
+            "service:" + serviceId,
+            "Druid node is healthy",
+            config.getAclToken()
+        );
       }
       catch (Exception e) {
         LOGGER.error(e, "Failed to update health check for service [%s]", serviceId);
@@ -153,7 +157,7 @@ public class ConsulDruidNodeAnnouncer implements DruidNodeAnnouncer
     String serviceName = config.getServicePrefix() + "-" + node.getNodeRole().getJsonName();
     return serviceName + "-" +
            node.getDruidNode().getHost() + "-" +
-           node.getDruidNode().getPlaintextPort();
+           node.getDruidNode().getPortToUse();
   }
 
   // Helper method to get the underlying Consul client for health checks

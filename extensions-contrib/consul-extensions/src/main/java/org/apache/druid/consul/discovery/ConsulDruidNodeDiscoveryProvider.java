@@ -149,6 +149,7 @@ public class ConsulDruidNodeDiscoveryProvider extends DruidNodeDiscoveryProvider
     listenerExecutor.shutdownNow();
 
     LOGGER.info("Stopped ConsulDruidNodeDiscoveryProvider");
+    lifecycleLock.exitStopAndReset();
   }
 
   @VisibleForTesting
@@ -318,6 +319,10 @@ public class ConsulDruidNodeDiscoveryProvider extends DruidNodeDiscoveryProvider
       }
       catch (Exception ex) {
         LOGGER.error(ex, "Failed to stop NodeRoleWatcher for role[%s].", nodeRole);
+      }
+      finally {
+        // Allow restart and leave lock in a clean state
+        lifecycleLock.exitStopAndReset();
       }
     }
 

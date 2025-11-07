@@ -35,10 +35,21 @@ public class ConsulDiscoveryConfigTest
     testSerde(
         "{\"servicePrefix\": \"druid\"}\n",
         new ConsulDiscoveryConfig(
-            null, null, "druid", null, null,
-            null, null,
-            null, null, null, null, null, null, null,
-            null, null, null, null, null
+            null,
+            null,
+            "druid",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
         )
     );
   }
@@ -65,8 +76,11 @@ public class ConsulDiscoveryConfigTest
             "test-druid",
             "secret-token",
             "dc1",
-            null, null,
-            null, null, null, null, null, null, null,
+            null,
+            null,
+            null,
+            null,
+            null,
             Duration.millis(5000),
             Duration.millis(30000),
             Duration.millis(30000),
@@ -77,18 +91,13 @@ public class ConsulDiscoveryConfigTest
   }
 
   @Test
-  public void testTlsConfigurationSerde() throws Exception
+  public void testSslClientConfigSerde() throws Exception
   {
     testSerde(
         "{\n"
         + "  \"host\": \"consul.example.com\",\n"
         + "  \"port\": 8501,\n"
         + "  \"servicePrefix\": \"druid-secure\",\n"
-        + "  \"enableTls\": true,\n"
-        + "  \"tlsCertificatePath\": \"/etc/druid/certs/client.pem\",\n"
-        + "  \"tlsKeyPath\": \"/etc/druid/certs/client-key.pem\",\n"
-        + "  \"tlsCaCertPath\": \"/etc/druid/certs/ca.pem\",\n"
-        + "  \"tlsVerifyHostname\": true,\n"
         + "  \"aclToken\": \"secret-token\"\n"
         + "}\n",
         new ConsulDiscoveryConfig(
@@ -97,15 +106,16 @@ public class ConsulDiscoveryConfigTest
             "druid-secure",
             "secret-token",
             null,
-            null, null,
-            true,
-            "/etc/druid/certs/client.pem",
-            "/etc/druid/certs/client-key.pem",
-            "/etc/druid/certs/ca.pem",
-            true,
             null,
             null,
-            null, null, null, null, null
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
         )
     );
   }
@@ -120,11 +130,21 @@ public class ConsulDiscoveryConfigTest
         + "  \"basicAuthPassword\": \"secret\"\n"
         + "}\n",
         new ConsulDiscoveryConfig(
-            null, null, "druid", null, null,
-            null, null,
-            null, null, null, null, null,
-            "admin", "secret",
-            null, null, null, null, null
+            null,
+            null,
+            "druid",
+            null,
+            null,
+            null,
+            null,
+            null,
+            "admin",
+            "secret",
+            null,
+            null,
+            null,
+            null,
+            null
         )
     );
   }
@@ -133,10 +153,21 @@ public class ConsulDiscoveryConfigTest
   public void testNullServicePrefixThrows()
   {
     new ConsulDiscoveryConfig(
-        null, null, null, null, null,
-        null, null,
-        null, null, null, null, null, null, null,
-        null, null, null, null, null
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
     );
   }
 
@@ -144,10 +175,21 @@ public class ConsulDiscoveryConfigTest
   public void testEmptyServicePrefixThrows()
   {
     new ConsulDiscoveryConfig(
-        null, null, "", null, null,
-        null, null,
-        null, null, null, null, null, null, null,
-        null, null, null, null, null
+        null,
+        null,
+        "",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
     );
   }
 
