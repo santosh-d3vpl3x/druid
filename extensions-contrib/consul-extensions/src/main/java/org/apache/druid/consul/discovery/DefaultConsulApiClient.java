@@ -55,11 +55,8 @@ public class DefaultConsulApiClient implements ConsulApiClient
     this.config = Preconditions.checkNotNull(config, "config");
     this.jsonMapper = Preconditions.checkNotNull(jsonMapper, "jsonMapper");
 
-    if (config.getAclToken() != null) {
-      this.consulClient = new ConsulClient(config.getHost(), config.getPort(), config.getAclToken());
-    } else {
-      this.consulClient = new ConsulClient(config.getHost(), config.getPort());
-    }
+    // Create basic Consul client (ACL token passed per-request via QueryParams)
+    this.consulClient = new ConsulClient(config.getHost(), config.getPort());
 
     LOGGER.info(
         "Created Consul client for [%s:%d] with service prefix [%s]",
@@ -121,7 +118,7 @@ public class DefaultConsulApiClient implements ConsulApiClient
     Response<List<HealthService>> response = consulClient.getHealthServices(
         serviceName,
         true, // only healthy
-        QueryParams.DEFAULT,
+        buildQueryParams(),
         config.getDatacenter()
     );
 
@@ -133,11 +130,10 @@ public class DefaultConsulApiClient implements ConsulApiClient
   {
     String serviceName = makeServiceName(nodeRole);
 
-    QueryParams queryParams = new QueryParams(waitSeconds, lastIndex);
     Response<List<HealthService>> response = consulClient.getHealthServices(
         serviceName,
         true, // only healthy
-        queryParams,
+        buildQueryParams(waitSeconds, lastIndex),
         config.getDatacenter()
     );
 
@@ -145,6 +141,28 @@ public class DefaultConsulApiClient implements ConsulApiClient
     long newIndex = response.getConsulIndex() != null ? response.getConsulIndex() : lastIndex;
 
     return new ConsulWatchResult(nodes, newIndex);
+  }
+
+  /**
+   * Creates QueryParams with ACL token if configured.
+   */
+  private QueryParams buildQueryParams()
+  {
+    if (config.getAclToken() != null) {
+      return new QueryParams(config.getAclToken());
+    }
+    return QueryParams.DEFAULT;
+  }
+
+  /**
+   * Creates QueryParams with wait time, index, and ACL token if configured.
+   */
+  private QueryParams buildQueryParams(long waitSeconds, long index)
+  {
+    if (config.getAclToken() != null) {
+      return new QueryParams(waitSeconds, index, config.getAclToken());
+    }
+    return new QueryParams(waitSeconds, index);
   }
 
   @Override

@@ -136,12 +136,8 @@ public class ConsulDiscoveryModule implements DruidModule
     @Override
     public ConsulClient get()
     {
-      // Create ConsulClient for leader election
-      if (config.getAclToken() != null) {
-        return new ConsulClient(config.getHost(), config.getPort(), config.getAclToken());
-      } else {
-        return new ConsulClient(config.getHost(), config.getPort());
-      }
+      // Create ConsulClient for leader election (ACL token passed per-request via QueryParams)
+      return new ConsulClient(config.getHost(), config.getPort());
     }
   }
 
