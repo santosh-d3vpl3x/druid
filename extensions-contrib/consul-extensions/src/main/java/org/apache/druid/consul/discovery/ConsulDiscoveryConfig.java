@@ -1,0 +1,218 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+package org.apache.druid.consul.discovery;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.base.Preconditions;
+import org.joda.time.Duration;
+
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+import java.util.Objects;
+
+/**
+ * Configuration for Consul-based service discovery.
+ */
+public class ConsulDiscoveryConfig
+{
+  @JsonProperty
+  @Nonnull
+  private final String host;
+
+  @JsonProperty
+  private final int port;
+
+  @JsonProperty
+  @Nonnull
+  private final String servicePrefix;
+
+  @JsonProperty
+  @Nullable
+  private final String aclToken;
+
+  @JsonProperty
+  @Nullable
+  private final String datacenter;
+
+  @JsonProperty
+  private final Duration healthCheckInterval;
+
+  @JsonProperty
+  private final Duration deregisterAfter;
+
+  @JsonProperty
+  private final Duration watchSeconds;
+
+  @JsonProperty
+  private final long maxWatchRetries;
+
+  @JsonProperty
+  private final Duration watchRetryDelay;
+
+  @JsonCreator
+  public ConsulDiscoveryConfig(
+      @JsonProperty("host") String host,
+      @JsonProperty("port") Integer port,
+      @JsonProperty("servicePrefix") String servicePrefix,
+      @JsonProperty("aclToken") String aclToken,
+      @JsonProperty("datacenter") String datacenter,
+      @JsonProperty("healthCheckInterval") Duration healthCheckInterval,
+      @JsonProperty("deregisterAfter") Duration deregisterAfter,
+      @JsonProperty("watchSeconds") Duration watchSeconds,
+      @JsonProperty("maxWatchRetries") Long maxWatchRetries,
+      @JsonProperty("watchRetryDelay") Duration watchRetryDelay
+  )
+  {
+    this.host = host == null ? "localhost" : host;
+    this.port = port == null ? 8500 : port;
+
+    Preconditions.checkArgument(
+        servicePrefix != null && !servicePrefix.isEmpty(),
+        "servicePrefix cannot be null or empty"
+    );
+    this.servicePrefix = servicePrefix;
+
+    this.aclToken = aclToken;
+    this.datacenter = datacenter;
+    this.healthCheckInterval = healthCheckInterval == null ? Duration.millis(10000) : healthCheckInterval;
+    this.deregisterAfter = deregisterAfter == null ? Duration.millis(90000) : deregisterAfter;
+    this.watchSeconds = watchSeconds == null ? Duration.millis(60000) : watchSeconds;
+    this.maxWatchRetries = maxWatchRetries == null ? Long.MAX_VALUE : maxWatchRetries;
+    this.watchRetryDelay = watchRetryDelay == null ? Duration.millis(10000) : watchRetryDelay;
+  }
+
+  @JsonProperty
+  public String getHost()
+  {
+    return host;
+  }
+
+  @JsonProperty
+  public int getPort()
+  {
+    return port;
+  }
+
+  @JsonProperty
+  public String getServicePrefix()
+  {
+    return servicePrefix;
+  }
+
+  @JsonProperty
+  @Nullable
+  public String getAclToken()
+  {
+    return aclToken;
+  }
+
+  @JsonProperty
+  @Nullable
+  public String getDatacenter()
+  {
+    return datacenter;
+  }
+
+  @JsonProperty
+  public Duration getHealthCheckInterval()
+  {
+    return healthCheckInterval;
+  }
+
+  @JsonProperty
+  public Duration getDeregisterAfter()
+  {
+    return deregisterAfter;
+  }
+
+  @JsonProperty
+  public Duration getWatchSeconds()
+  {
+    return watchSeconds;
+  }
+
+  @JsonProperty
+  public long getMaxWatchRetries()
+  {
+    return maxWatchRetries;
+  }
+
+  @JsonProperty
+  public Duration getWatchRetryDelay()
+  {
+    return watchRetryDelay;
+  }
+
+  @Override
+  public boolean equals(Object o)
+  {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    ConsulDiscoveryConfig that = (ConsulDiscoveryConfig) o;
+    return port == that.port &&
+           maxWatchRetries == that.maxWatchRetries &&
+           host.equals(that.host) &&
+           servicePrefix.equals(that.servicePrefix) &&
+           Objects.equals(aclToken, that.aclToken) &&
+           Objects.equals(datacenter, that.datacenter) &&
+           Objects.equals(healthCheckInterval, that.healthCheckInterval) &&
+           Objects.equals(deregisterAfter, that.deregisterAfter) &&
+           Objects.equals(watchSeconds, that.watchSeconds) &&
+           Objects.equals(watchRetryDelay, that.watchRetryDelay);
+  }
+
+  @Override
+  public int hashCode()
+  {
+    return Objects.hash(
+        host,
+        port,
+        servicePrefix,
+        aclToken,
+        datacenter,
+        healthCheckInterval,
+        deregisterAfter,
+        watchSeconds,
+        maxWatchRetries,
+        watchRetryDelay
+    );
+  }
+
+  @Override
+  public String toString()
+  {
+    return "ConsulDiscoveryConfig{" +
+           "host='" + host + '\'' +
+           ", port=" + port +
+           ", servicePrefix='" + servicePrefix + '\'' +
+           ", datacenter='" + datacenter + '\'' +
+           ", healthCheckInterval=" + healthCheckInterval +
+           ", deregisterAfter=" + deregisterAfter +
+           ", watchSeconds=" + watchSeconds +
+           ", maxWatchRetries=" + maxWatchRetries +
+           ", watchRetryDelay=" + watchRetryDelay +
+           '}';
+  }
+}
