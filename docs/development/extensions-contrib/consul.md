@@ -54,6 +54,13 @@ druid.discovery.type=consul
 |`druid.discovery.consul.servicePrefix`|String|Prefix for Consul service names. Used to namespace multiple Druid clusters in the same Consul cluster.|None|Yes|
 |`druid.discovery.consul.aclToken`|String|Consul ACL token for authentication. Required if Consul ACL is enabled.|None|No|
 |`druid.discovery.consul.datacenter`|String|Consul datacenter to use for service registration and discovery.|Default datacenter|No|
+|`druid.discovery.consul.enableTls`|Boolean|Enable HTTPS/TLS for Consul communication.|`false`|No|
+|`druid.discovery.consul.tlsCertificatePath`|String|Path to client certificate file for mTLS authentication (PEM or PKCS12).|None|No|
+|`druid.discovery.consul.tlsKeyPath`|String|Path to client private key file for mTLS authentication.|None|No|
+|`druid.discovery.consul.tlsCaCertPath`|String|Path to CA certificate file for verifying Consul server certificate.|None|No|
+|`druid.discovery.consul.tlsVerifyHostname`|Boolean|Verify Consul server hostname against certificate. Set to false to disable (insecure).|`true`|No|
+|`druid.discovery.consul.basicAuthUser`|String|Username for HTTP basic authentication.|None|No|
+|`druid.discovery.consul.basicAuthPassword`|String|Password for HTTP basic authentication.|None|No|
 |`druid.discovery.consul.healthCheckInterval`|ISO8601 Duration|How often to update Consul health checks (TTL checks).|`PT10S`|No|
 |`druid.discovery.consul.deregisterAfter`|ISO8601 Duration|How long after health check fails before Consul deregisters the service.|`PT90S`|No|
 |`druid.discovery.consul.watchSeconds`|ISO8601 Duration|How long to block when watching for service changes (Consul blocking query duration).|`PT60S`|No|
@@ -93,6 +100,32 @@ druid.discovery.consul.aclToken=your-secret-acl-token
 druid.discovery.consul.datacenter=dc1
 ```
 
+For TLS-enabled Consul with certificate authentication:
+
+```properties
+druid.discovery.type=consul
+druid.discovery.consul.host=consul.example.com
+druid.discovery.consul.port=8501
+druid.discovery.consul.servicePrefix=druid-prod
+druid.discovery.consul.enableTls=true
+druid.discovery.consul.tlsCaCertPath=/etc/druid/certs/consul-ca.pem
+druid.discovery.consul.tlsCertificatePath=/etc/druid/certs/druid-client.pem
+druid.discovery.consul.tlsKeyPath=/etc/druid/certs/druid-client-key.pem
+druid.discovery.consul.tlsVerifyHostname=true
+druid.discovery.consul.aclToken=your-secret-acl-token
+```
+
+For Consul with basic authentication:
+
+```properties
+druid.discovery.type=consul
+druid.discovery.consul.host=consul.example.com
+druid.discovery.consul.port=8500
+druid.discovery.consul.servicePrefix=druid-prod
+druid.discovery.consul.basicAuthUser=druid
+druid.discovery.consul.basicAuthPassword=secret-password
+```
+
 ## How It Works
 
 ### Service Registration
@@ -118,6 +151,70 @@ The extension maintains service health by:
 - Periodically updating the health check status (default: every 10 seconds)
 - Consul automatically deregisters services whose health checks fail for too long (default: 90 seconds)
 
+## Authentication Methods
+
+The extension supports multiple authentication methods for securing communication with Consul:
+
+### 1. ACL Token Authentication (Recommended)
+
+Most common for production deployments:
+
+```properties
+druid.discovery.consul.aclToken=your-secret-token
+```
+
+The token must have appropriate permissions (see Consul ACL Permissions section below).
+
+### 2. TLS/HTTPS with Certificate Verification
+
+For encrypted communication and server verification:
+
+```properties
+druid.discovery.consul.enableTls=true
+druid.discovery.consul.tlsCaCertPath=/path/to/consul-ca.pem
+```
+
+### 3. Mutual TLS (mTLS) Authentication
+
+For strongest security, use client certificates:
+
+```properties
+druid.discovery.consul.enableTls=true
+druid.discovery.consul.tlsCaCertPath=/path/to/consul-ca.pem
+druid.discovery.consul.tlsCertificatePath=/path/to/client-cert.pem
+druid.discovery.consul.tlsKeyPath=/path/to/client-key.pem
+druid.discovery.consul.tlsVerifyHostname=true
+```
+
+**Note:** Certificate files can be in PEM or PKCS12 format. For production use with PEM files, you may need to add BouncyCastle to your classpath for proper key parsing.
+
+### 4. Basic Authentication
+
+For simple HTTP basic auth (less common):
+
+```properties
+druid.discovery.consul.basicAuthUser=username
+druid.discovery.consul.basicAuthPassword=password
+```
+
+### 5. Combined Authentication
+
+You can combine methods for defense-in-depth:
+
+```properties
+# TLS + ACL Token
+druid.discovery.consul.enableTls=true
+druid.discovery.consul.tlsCaCertPath=/path/to/ca.pem
+druid.discovery.consul.aclToken=your-token
+
+# mTLS + ACL Token (most secure)
+druid.discovery.consul.enableTls=true
+druid.discovery.consul.tlsCaCertPath=/path/to/ca.pem
+druid.discovery.consul.tlsCertificatePath=/path/to/cert.pem
+druid.discovery.consul.tlsKeyPath=/path/to/key.pem
+druid.discovery.consul.aclToken=your-token
+```
+
 ## Requirements
 
 - Consul 1.0.0 or higher
@@ -126,6 +223,10 @@ The extension maintains service health by:
   - Register and deregister services
   - Read service catalog
   - Update health checks
+- If using TLS/mTLS:
+  - Valid certificates issued by trusted CA
+  - Certificate files accessible to Druid processes
+  - Consul configured to accept TLS connections
 
 ## Consul ACL Permissions
 
@@ -160,6 +261,57 @@ Check Druid logs for:
 - All Druid nodes must be able to reach the Consul agent
 - Service metadata size is limited by Consul's limits (typically 512KB)
 
+## Implementation Details
+
+### Current Approach: Service Registration
+
+The extension uses Consul's **Service Catalog** with the following design:
+
+- Each Druid node registers as a Consul service
+- Service name format: `{servicePrefix}-{nodeRole}` (e.g., `druid-prod-broker`)
+- Full `DiscoveryDruidNode` JSON stored in service metadata
+- TTL-based health checks with automatic updates
+- Blocking queries for efficient change detection
+
+**Advantages:**
+- Native Consul integration
+- Visible in Consul UI
+- Built-in health checking
+- Standard Consul patterns
+
+**Limitations:**
+- Service metadata size limits (~512KB typically)
+- Requires regular health check updates
+
+### Alternative Approaches
+
+Other valid implementation patterns that could be considered:
+
+#### 1. Key-Value Store Approach
+Store node information in Consul's KV store:
+```
+/druid/{cluster}/{role}/{host:port} = DiscoveryDruidNode JSON
+```
+
+- Use Consul sessions for ephemeral keys (auto-cleanup)
+- Watch KV prefix for changes
+- More ZooKeeper-like behavior
+- No metadata size limits
+
+#### 2. Hybrid Approach
+Combine services for discovery + KV for detailed metadata:
+- Register service with minimal info
+- Store full details in KV store
+- Best of both worlds, but more complex
+
+#### 3. Service + Tags
+Use extensive Consul service tags for filtering:
+- Faster queries with tag-based filtering
+- Limited metadata in service itself
+- Scales better for very large clusters
+
+The current implementation (Service Catalog) was chosen for its simplicity, native Consul integration, and alignment with Consul best practices.
+
 ## Comparison with Other Discovery Methods
 
 | Feature | ZooKeeper | Kubernetes | Consul |
@@ -169,6 +321,8 @@ Check Druid logs for:
 | External Dependency | ZooKeeper cluster | Kubernetes cluster | Consul cluster |
 | Health Checking | Session-based | Liveness probes | TTL checks |
 | Multi-cluster Support | Via ZK paths | Via namespaces | Via service prefixes |
+| TLS/mTLS Support | ✓ | ✓ | ✓ |
+| ACL/RBAC | ✓ | ✓ | ✓ |
 
 ## Testing
 

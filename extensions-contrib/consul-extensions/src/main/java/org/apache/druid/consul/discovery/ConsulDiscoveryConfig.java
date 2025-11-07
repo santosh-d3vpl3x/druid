@@ -53,6 +53,32 @@ public class ConsulDiscoveryConfig
   private final String datacenter;
 
   @JsonProperty
+  private final boolean enableTls;
+
+  @JsonProperty
+  @Nullable
+  private final String tlsCertificatePath;
+
+  @JsonProperty
+  @Nullable
+  private final String tlsKeyPath;
+
+  @JsonProperty
+  @Nullable
+  private final String tlsCaCertPath;
+
+  @JsonProperty
+  private final boolean tlsVerifyHostname;
+
+  @JsonProperty
+  @Nullable
+  private final String basicAuthUser;
+
+  @JsonProperty
+  @Nullable
+  private final String basicAuthPassword;
+
+  @JsonProperty
   private final Duration healthCheckInterval;
 
   @JsonProperty
@@ -74,6 +100,13 @@ public class ConsulDiscoveryConfig
       @JsonProperty("servicePrefix") String servicePrefix,
       @JsonProperty("aclToken") String aclToken,
       @JsonProperty("datacenter") String datacenter,
+      @JsonProperty("enableTls") Boolean enableTls,
+      @JsonProperty("tlsCertificatePath") String tlsCertificatePath,
+      @JsonProperty("tlsKeyPath") String tlsKeyPath,
+      @JsonProperty("tlsCaCertPath") String tlsCaCertPath,
+      @JsonProperty("tlsVerifyHostname") Boolean tlsVerifyHostname,
+      @JsonProperty("basicAuthUser") String basicAuthUser,
+      @JsonProperty("basicAuthPassword") String basicAuthPassword,
       @JsonProperty("healthCheckInterval") Duration healthCheckInterval,
       @JsonProperty("deregisterAfter") Duration deregisterAfter,
       @JsonProperty("watchSeconds") Duration watchSeconds,
@@ -92,6 +125,13 @@ public class ConsulDiscoveryConfig
 
     this.aclToken = aclToken;
     this.datacenter = datacenter;
+    this.enableTls = enableTls != null && enableTls;
+    this.tlsCertificatePath = tlsCertificatePath;
+    this.tlsKeyPath = tlsKeyPath;
+    this.tlsCaCertPath = tlsCaCertPath;
+    this.tlsVerifyHostname = tlsVerifyHostname == null || tlsVerifyHostname;
+    this.basicAuthUser = basicAuthUser;
+    this.basicAuthPassword = basicAuthPassword;
     this.healthCheckInterval = healthCheckInterval == null ? Duration.millis(10000) : healthCheckInterval;
     this.deregisterAfter = deregisterAfter == null ? Duration.millis(90000) : deregisterAfter;
     this.watchSeconds = watchSeconds == null ? Duration.millis(60000) : watchSeconds;
@@ -129,6 +169,53 @@ public class ConsulDiscoveryConfig
   public String getDatacenter()
   {
     return datacenter;
+  }
+
+  @JsonProperty
+  public boolean isEnableTls()
+  {
+    return enableTls;
+  }
+
+  @JsonProperty
+  @Nullable
+  public String getTlsCertificatePath()
+  {
+    return tlsCertificatePath;
+  }
+
+  @JsonProperty
+  @Nullable
+  public String getTlsKeyPath()
+  {
+    return tlsKeyPath;
+  }
+
+  @JsonProperty
+  @Nullable
+  public String getTlsCaCertPath()
+  {
+    return tlsCaCertPath;
+  }
+
+  @JsonProperty
+  public boolean isTlsVerifyHostname()
+  {
+    return tlsVerifyHostname;
+  }
+
+  @JsonProperty
+  @Nullable
+  public String getBasicAuthUser()
+  {
+    return basicAuthUser;
+  }
+
+  @JsonProperty
+  @Nullable
+  public String getBasicAuthPassword()
+  {
+    return basicAuthPassword;
   }
 
   @JsonProperty
@@ -173,10 +260,17 @@ public class ConsulDiscoveryConfig
     ConsulDiscoveryConfig that = (ConsulDiscoveryConfig) o;
     return port == that.port &&
            maxWatchRetries == that.maxWatchRetries &&
+           enableTls == that.enableTls &&
+           tlsVerifyHostname == that.tlsVerifyHostname &&
            host.equals(that.host) &&
            servicePrefix.equals(that.servicePrefix) &&
            Objects.equals(aclToken, that.aclToken) &&
            Objects.equals(datacenter, that.datacenter) &&
+           Objects.equals(tlsCertificatePath, that.tlsCertificatePath) &&
+           Objects.equals(tlsKeyPath, that.tlsKeyPath) &&
+           Objects.equals(tlsCaCertPath, that.tlsCaCertPath) &&
+           Objects.equals(basicAuthUser, that.basicAuthUser) &&
+           Objects.equals(basicAuthPassword, that.basicAuthPassword) &&
            Objects.equals(healthCheckInterval, that.healthCheckInterval) &&
            Objects.equals(deregisterAfter, that.deregisterAfter) &&
            Objects.equals(watchSeconds, that.watchSeconds) &&
@@ -192,6 +286,13 @@ public class ConsulDiscoveryConfig
         servicePrefix,
         aclToken,
         datacenter,
+        enableTls,
+        tlsCertificatePath,
+        tlsKeyPath,
+        tlsCaCertPath,
+        tlsVerifyHostname,
+        basicAuthUser,
+        basicAuthPassword,
         healthCheckInterval,
         deregisterAfter,
         watchSeconds,
@@ -208,6 +309,9 @@ public class ConsulDiscoveryConfig
            ", port=" + port +
            ", servicePrefix='" + servicePrefix + '\'' +
            ", datacenter='" + datacenter + '\'' +
+           ", enableTls=" + enableTls +
+           ", tlsVerifyHostname=" + tlsVerifyHostname +
+           ", basicAuthUser='" + basicAuthUser + '\'' +
            ", healthCheckInterval=" + healthCheckInterval +
            ", deregisterAfter=" + deregisterAfter +
            ", watchSeconds=" + watchSeconds +

@@ -34,7 +34,11 @@ public class ConsulDiscoveryConfigTest
   {
     testSerde(
         "{\"servicePrefix\": \"druid\"}\n",
-        new ConsulDiscoveryConfig(null, null, "druid", null, null, null, null, null, null, null)
+        new ConsulDiscoveryConfig(
+            null, null, "druid", null, null,
+            null, null, null, null, null, null, null,
+            null, null, null, null, null
+        )
     );
   }
 
@@ -60,6 +64,7 @@ public class ConsulDiscoveryConfigTest
             "test-druid",
             "secret-token",
             "dc1",
+            null, null, null, null, null, null, null,
             Duration.millis(5000),
             Duration.millis(30000),
             Duration.millis(30000),
@@ -69,16 +74,75 @@ public class ConsulDiscoveryConfigTest
     );
   }
 
+  @Test
+  public void testTlsConfigurationSerde() throws Exception
+  {
+    testSerde(
+        "{\n"
+        + "  \"host\": \"consul.example.com\",\n"
+        + "  \"port\": 8501,\n"
+        + "  \"servicePrefix\": \"druid-secure\",\n"
+        + "  \"enableTls\": true,\n"
+        + "  \"tlsCertificatePath\": \"/etc/druid/certs/client.pem\",\n"
+        + "  \"tlsKeyPath\": \"/etc/druid/certs/client-key.pem\",\n"
+        + "  \"tlsCaCertPath\": \"/etc/druid/certs/ca.pem\",\n"
+        + "  \"tlsVerifyHostname\": true,\n"
+        + "  \"aclToken\": \"secret-token\"\n"
+        + "}\n",
+        new ConsulDiscoveryConfig(
+            "consul.example.com",
+            8501,
+            "druid-secure",
+            "secret-token",
+            null,
+            true,
+            "/etc/druid/certs/client.pem",
+            "/etc/druid/certs/client-key.pem",
+            "/etc/druid/certs/ca.pem",
+            true,
+            null,
+            null,
+            null, null, null, null, null
+        )
+    );
+  }
+
+  @Test
+  public void testBasicAuthConfigurationSerde() throws Exception
+  {
+    testSerde(
+        "{\n"
+        + "  \"servicePrefix\": \"druid\",\n"
+        + "  \"basicAuthUser\": \"admin\",\n"
+        + "  \"basicAuthPassword\": \"secret\"\n"
+        + "}\n",
+        new ConsulDiscoveryConfig(
+            null, null, "druid", null, null,
+            null, null, null, null, null,
+            "admin", "secret",
+            null, null, null, null, null
+        )
+    );
+  }
+
   @Test(expected = IllegalArgumentException.class)
   public void testNullServicePrefixThrows()
   {
-    new ConsulDiscoveryConfig(null, null, null, null, null, null, null, null, null, null);
+    new ConsulDiscoveryConfig(
+        null, null, null, null, null,
+        null, null, null, null, null, null, null,
+        null, null, null, null, null
+    );
   }
 
   @Test(expected = IllegalArgumentException.class)
   public void testEmptyServicePrefixThrows()
   {
-    new ConsulDiscoveryConfig(null, null, "", null, null, null, null, null, null, null);
+    new ConsulDiscoveryConfig(
+        null, null, "", null, null,
+        null, null, null, null, null, null, null,
+        null, null, null, null, null
+    );
   }
 
   private void testSerde(String jsonStr, ConsulDiscoveryConfig expected) throws Exception
