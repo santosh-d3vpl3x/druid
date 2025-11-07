@@ -63,6 +63,7 @@ public class ConsulAnnouncerAndDiscoveryIntTest
         "druid-test",
         null,
         null,
+        null, null,
         null, null, null, null, null, null, null,
         Duration.millis(5000),
         Duration.millis(30000),

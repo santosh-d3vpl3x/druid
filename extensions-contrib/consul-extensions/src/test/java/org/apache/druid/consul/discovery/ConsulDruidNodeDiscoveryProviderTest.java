@@ -56,6 +56,7 @@ public class ConsulDruidNodeDiscoveryProviderTest
       "druid",
       null,
       null,
+      null, null,
       null, null, null, null, null, null, null,
       Duration.millis(10000),
       Duration.millis(90000),

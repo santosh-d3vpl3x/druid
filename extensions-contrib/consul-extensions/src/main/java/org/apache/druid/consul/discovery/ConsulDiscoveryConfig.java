@@ -53,6 +53,14 @@ public class ConsulDiscoveryConfig
   private final String datacenter;
 
   @JsonProperty
+  @Nonnull
+  private final String coordinatorLeaderLockPath;
+
+  @JsonProperty
+  @Nonnull
+  private final String overlordLeaderLockPath;
+
+  @JsonProperty
   private final boolean enableTls;
 
   @JsonProperty
@@ -100,6 +108,8 @@ public class ConsulDiscoveryConfig
       @JsonProperty("servicePrefix") String servicePrefix,
       @JsonProperty("aclToken") String aclToken,
       @JsonProperty("datacenter") String datacenter,
+      @JsonProperty("coordinatorLeaderLockPath") String coordinatorLeaderLockPath,
+      @JsonProperty("overlordLeaderLockPath") String overlordLeaderLockPath,
       @JsonProperty("enableTls") Boolean enableTls,
       @JsonProperty("tlsCertificatePath") String tlsCertificatePath,
       @JsonProperty("tlsKeyPath") String tlsKeyPath,
@@ -125,6 +135,12 @@ public class ConsulDiscoveryConfig
 
     this.aclToken = aclToken;
     this.datacenter = datacenter;
+    this.coordinatorLeaderLockPath = coordinatorLeaderLockPath != null
+        ? coordinatorLeaderLockPath
+        : "druid/leader/coordinator";
+    this.overlordLeaderLockPath = overlordLeaderLockPath != null
+        ? overlordLeaderLockPath
+        : "druid/leader/overlord";
     this.enableTls = enableTls != null && enableTls;
     this.tlsCertificatePath = tlsCertificatePath;
     this.tlsKeyPath = tlsKeyPath;
@@ -169,6 +185,18 @@ public class ConsulDiscoveryConfig
   public String getDatacenter()
   {
     return datacenter;
+  }
+
+  @JsonProperty
+  public String getCoordinatorLeaderLockPath()
+  {
+    return coordinatorLeaderLockPath;
+  }
+
+  @JsonProperty
+  public String getOverlordLeaderLockPath()
+  {
+    return overlordLeaderLockPath;
   }
 
   @JsonProperty
@@ -266,6 +294,8 @@ public class ConsulDiscoveryConfig
            servicePrefix.equals(that.servicePrefix) &&
            Objects.equals(aclToken, that.aclToken) &&
            Objects.equals(datacenter, that.datacenter) &&
+           Objects.equals(coordinatorLeaderLockPath, that.coordinatorLeaderLockPath) &&
+           Objects.equals(overlordLeaderLockPath, that.overlordLeaderLockPath) &&
            Objects.equals(tlsCertificatePath, that.tlsCertificatePath) &&
            Objects.equals(tlsKeyPath, that.tlsKeyPath) &&
            Objects.equals(tlsCaCertPath, that.tlsCaCertPath) &&
@@ -286,6 +316,8 @@ public class ConsulDiscoveryConfig
         servicePrefix,
         aclToken,
         datacenter,
+        coordinatorLeaderLockPath,
+        overlordLeaderLockPath,
         enableTls,
         tlsCertificatePath,
         tlsKeyPath,

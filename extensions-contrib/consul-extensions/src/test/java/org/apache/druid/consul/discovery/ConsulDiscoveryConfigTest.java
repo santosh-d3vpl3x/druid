@@ -36,6 +36,7 @@ public class ConsulDiscoveryConfigTest
         "{\"servicePrefix\": \"druid\"}\n",
         new ConsulDiscoveryConfig(
             null, null, "druid", null, null,
+            null, null,
             null, null, null, null, null, null, null,
             null, null, null, null, null
         )
@@ -64,6 +65,7 @@ public class ConsulDiscoveryConfigTest
             "test-druid",
             "secret-token",
             "dc1",
+            null, null,
             null, null, null, null, null, null, null,
             Duration.millis(5000),
             Duration.millis(30000),
@@ -95,6 +97,7 @@ public class ConsulDiscoveryConfigTest
             "druid-secure",
             "secret-token",
             null,
+            null, null,
             true,
             "/etc/druid/certs/client.pem",
             "/etc/druid/certs/client-key.pem",
@@ -118,6 +121,7 @@ public class ConsulDiscoveryConfigTest
         + "}\n",
         new ConsulDiscoveryConfig(
             null, null, "druid", null, null,
+            null, null,
             null, null, null, null, null,
             "admin", "secret",
             null, null, null, null, null
@@ -130,6 +134,7 @@ public class ConsulDiscoveryConfigTest
   {
     new ConsulDiscoveryConfig(
         null, null, null, null, null,
+        null, null,
         null, null, null, null, null, null, null,
         null, null, null, null, null
     );
@@ -140,6 +145,7 @@ public class ConsulDiscoveryConfigTest
   {
     new ConsulDiscoveryConfig(
         null, null, "", null, null,
+        null, null,
         null, null, null, null, null, null, null,
         null, null, null, null, null
     );

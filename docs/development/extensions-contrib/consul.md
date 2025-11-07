@@ -28,8 +28,8 @@ Apache Druid extension to enable using HashiCorp Consul for node discovery. This
 
 This extension is useful when:
 - Your infrastructure already uses Consul for service discovery
-- You want to run Druid without ZooKeeper for node discovery (ZooKeeper is still required for coordinator/overlord leader election unless using Kubernetes)
-- You want a lightweight service discovery mechanism with health checking
+- You want to run Druid without ZooKeeper entirely (this extension provides both service discovery and leader election)
+- You want a lightweight service discovery and coordination mechanism with health checking
 
 ## Configuration
 
@@ -41,9 +41,11 @@ This extension works together with HTTP-based segment and task management in Dru
 druid.serverview.type=http
 druid.indexer.runner.type=httpRemote
 druid.discovery.type=consul
+druid.coordinator.selector.type=consul
+druid.indexer.selector.type=consul
 ```
 
-**Note:** ZooKeeper is still required for Coordinator and Overlord leader election. To completely remove ZooKeeper dependency, use the Kubernetes extension which provides both service discovery and leader election.
+**Note:** This extension provides complete ZooKeeper replacement, including both service discovery and leader election for Coordinator and Overlord roles.
 
 ### Properties
 
@@ -66,6 +68,8 @@ druid.discovery.type=consul
 |`druid.discovery.consul.watchSeconds`|ISO8601 Duration|How long to block when watching for service changes (Consul blocking query duration).|`PT60S`|No|
 |`druid.discovery.consul.maxWatchRetries`|Long|Maximum number of watch retries before giving up. Set to `Long.MAX_VALUE` for unlimited.|`Long.MAX_VALUE`|No|
 |`druid.discovery.consul.watchRetryDelay`|ISO8601 Duration|How long to wait before retrying after a watch error.|`PT10S`|No|
+|`druid.discovery.consul.coordinatorLeaderLockPath`|String|Consul KV path for Coordinator leader election lock.|`druid/leader/coordinator`|No|
+|`druid.discovery.consul.overlordLeaderLockPath`|String|Consul KV path for Overlord leader election lock.|`druid/leader/overlord`|No|
 
 ### Example Configuration
 
@@ -85,8 +89,9 @@ druid.discovery.consul.servicePrefix=druid-prod
 druid.serverview.type=http
 druid.indexer.runner.type=httpRemote
 
-# ZooKeeper still needed for leader election
-druid.zk.service.host=zk-1:2181,zk-2:2181,zk-3:2181
+# Leader election using Consul (replaces ZooKeeper)
+druid.coordinator.selector.type=consul
+druid.indexer.selector.type=consul
 ```
 
 For a secure Consul cluster with ACL:
@@ -150,6 +155,19 @@ The extension maintains service health by:
 - Registering a TTL-based health check with each service
 - Periodically updating the health check status (default: every 10 seconds)
 - Consul automatically deregisters services whose health checks fail for too long (default: 90 seconds)
+
+### Leader Election
+
+The extension provides leader election for Coordinator and Overlord using Consul sessions and locks:
+
+1. **Session Creation**: Each leader candidate creates a Consul session with TTL
+2. **Lock Acquisition**: Candidates attempt to acquire a lock on a KV key using the session
+3. **Leadership**: The first to acquire the lock becomes the leader
+4. **Session Renewal**: Leaders periodically renew their session to maintain the lock
+5. **Failure Detection**: If a leader fails to renew its session, Consul automatically releases the lock
+6. **Re-election**: Other candidates detect the lock release and compete for leadership
+
+This provides the same ephemeral node behavior as ZooKeeper's leader election, completely removing the need for ZooKeeper in your Druid deployment.
 
 ## Authentication Methods
 
@@ -256,10 +274,9 @@ Check Druid logs for:
 
 ## Limitations
 
-- This extension provides service discovery only, not leader election
-- ZooKeeper is still required for Coordinator and Overlord leader election
 - All Druid nodes must be able to reach the Consul agent
 - Service metadata size is limited by Consul's limits (typically 512KB)
+- Leader election paths must be unique per cluster (configure via `coordinatorLeaderLockPath` and `overlordLeaderLockPath` if running multiple clusters)
 
 ## Implementation Details
 
@@ -317,10 +334,11 @@ The current implementation (Service Catalog) was chosen for its simplicity, nati
 | Feature | ZooKeeper | Kubernetes | Consul |
 |---------|-----------|------------|--------|
 | Service Discovery | ✓ | ✓ | ✓ |
-| Leader Election | ✓ | ✓ | ✗ |
+| Leader Election | ✓ | ✓ | ✓ |
 | External Dependency | ZooKeeper cluster | Kubernetes cluster | Consul cluster |
 | Health Checking | Session-based | Liveness probes | TTL checks |
-| Multi-cluster Support | Via ZK paths | Via namespaces | Via service prefixes |
+| Leader Election Mechanism | Ephemeral nodes | Leader election API | Sessions + locks |
+| Multi-cluster Support | Via ZK paths | Via namespaces | Via service prefixes + lock paths |
 | TLS/mTLS Support | ✓ | ✓ | ✓ |
 | ACL/RBAC | ✓ | ✓ | ✓ |
 
