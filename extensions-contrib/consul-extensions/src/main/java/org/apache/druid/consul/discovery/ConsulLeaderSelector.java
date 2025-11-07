@@ -89,7 +89,11 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
   public String getCurrentLeader()
   {
     try {
-      Response<GetValue> response = consulClient.getKVValue(lockKey, buildQueryParams());
+      Response<GetValue> response = consulClient.getKVValue(
+          lockKey,
+          config.getAclToken(),
+          buildQueryParams()
+      );
       if (response != null && response.getValue() != null && response.getValue().getValue() != null) {
         return new String(Base64.getDecoder().decode(response.getValue().getValue()));
       }
@@ -163,7 +167,7 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
     // Destroy session (this will release the lock)
     if (sessionId != null) {
       try {
-        consulClient.sessionDestroy(sessionId, buildQueryParams());
+        consulClient.sessionDestroy(sessionId, buildQueryParams(), config.getAclToken());
       }
       catch (Exception e) {
         LOGGER.error(e, "Failed to destroy Consul session");
@@ -263,14 +267,22 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
     // Lock delay - prevents rapid re-acquisition after session invalidation (in seconds)
     newSession.setLockDelay(5L);
 
-    Response<String> response = consulClient.sessionCreate(newSession, buildQueryParams(), config.getDatacenter());
+    Response<String> response = consulClient.sessionCreate(
+        newSession,
+        buildQueryParams(),
+        config.getAclToken()
+    );
     return response.getValue();
   }
 
   private void renewSession(String sessionId)
   {
     try {
-      Response<Session> response = consulClient.renewSession(sessionId, buildQueryParams(), config.getDatacenter());
+      Response<Session> response = consulClient.renewSession(
+          sessionId,
+          buildQueryParams(),
+          config.getAclToken()
+      );
       if (response == null || response.getValue() == null) {
         LOGGER.warn("Failed to renew session [%s], session may have expired", sessionId);
         // Session expired, will be recreated in next loop iteration
@@ -294,14 +306,12 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
 
       PutParams putParams = new PutParams();
       putParams.setAcquireSession(sessionId);
-      if (config.getAclToken() != null) {
-        putParams.setToken(config.getAclToken());
-      }
-
       Response<Boolean> response = consulClient.setKVValue(
           lockKey,
           leaderValue,
-          putParams
+          config.getAclToken(),
+          putParams,
+          buildQueryParams()
       );
 
       return response != null && Boolean.TRUE.equals(response.getValue());
@@ -329,7 +339,7 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
       // Destroy session to release lock
       if (sessionId != null) {
         try {
-          consulClient.sessionDestroy(sessionId, buildQueryParams());
+          consulClient.sessionDestroy(sessionId, buildQueryParams(), config.getAclToken());
         }
         catch (Exception e) {
           LOGGER.error(e, "Failed to destroy session after becomeLeader failure");
@@ -357,13 +367,10 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
     }
   }
 
-  /**
-   * Creates QueryParams with ACL token if configured.
-   */
   private QueryParams buildQueryParams()
   {
-    if (config.getAclToken() != null) {
-      return new QueryParams(config.getAclToken());
+    if (config.getDatacenter() != null) {
+      return new QueryParams(config.getDatacenter());
     }
     return QueryParams.DEFAULT;
   }

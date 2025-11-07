@@ -96,10 +96,10 @@ public class DefaultConsulApiClient implements ConsulApiClient
     );
     service.setCheck(check);
 
-    consulClient.agentServiceRegister(service, config.getDatacenter());
+    consulClient.agentServiceRegister(service, config.getAclToken());
 
     // Immediately mark as passing
-    consulClient.agentCheckPass("service:" + serviceId, "Druid node is healthy");
+    consulClient.agentCheckPass("service:" + serviceId, "Druid node is healthy", config.getAclToken());
 
     LOGGER.info("Registered service [%s] with Consul: %s", serviceId, node);
   }
@@ -107,7 +107,7 @@ public class DefaultConsulApiClient implements ConsulApiClient
   @Override
   public void deregisterService(String serviceId) throws Exception
   {
-    consulClient.agentServiceDeregister(serviceId);
+    consulClient.agentServiceDeregister(serviceId, config.getAclToken());
     LOGGER.info("Deregistered service [%s] from Consul", serviceId);
   }
 
@@ -119,7 +119,7 @@ public class DefaultConsulApiClient implements ConsulApiClient
         serviceName,
         true, // only healthy
         buildQueryParams(),
-        config.getDatacenter()
+        config.getAclToken()
     );
 
     return parseHealthServices(response.getValue());
@@ -134,7 +134,7 @@ public class DefaultConsulApiClient implements ConsulApiClient
         serviceName,
         true, // only healthy
         buildQueryParams(waitSeconds, lastIndex),
-        config.getDatacenter()
+        config.getAclToken()
     );
 
     List<DiscoveryDruidNode> nodes = parseHealthServices(response.getValue());
@@ -148,8 +148,8 @@ public class DefaultConsulApiClient implements ConsulApiClient
    */
   private QueryParams buildQueryParams()
   {
-    if (config.getAclToken() != null) {
-      return new QueryParams(config.getAclToken());
+    if (config.getDatacenter() != null) {
+      return new QueryParams(config.getDatacenter());
     }
     return QueryParams.DEFAULT;
   }
@@ -159,8 +159,8 @@ public class DefaultConsulApiClient implements ConsulApiClient
    */
   private QueryParams buildQueryParams(long waitSeconds, long index)
   {
-    if (config.getAclToken() != null) {
-      return new QueryParams(waitSeconds, index, config.getAclToken());
+    if (config.getDatacenter() != null) {
+      return new QueryParams(config.getDatacenter(), waitSeconds, index);
     }
     return new QueryParams(waitSeconds, index);
   }

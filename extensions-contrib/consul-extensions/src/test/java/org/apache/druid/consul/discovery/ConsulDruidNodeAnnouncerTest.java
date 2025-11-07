@@ -78,12 +78,20 @@ public class ConsulDruidNodeAnnouncerTest
     mockConsulApiClient.registerService(EasyMock.capture(nodeCapture));
     EasyMock.expectLastCall().once();
 
+    // Expect deregisterService to be called during cleanup
+    mockConsulApiClient.deregisterService(EasyMock.anyString());
+    EasyMock.expectLastCall().once();
+
     EasyMock.replay(mockConsulApiClient);
 
     announcer.announce(testNode);
+    Assert.assertEquals(testNode, nodeCapture.getValue());
+
+    // Manually stop announcer to trigger cleanup before verify
+    announcer.stop();
+    announcer = null;
 
     EasyMock.verify(mockConsulApiClient);
-    Assert.assertEquals(testNode, nodeCapture.getValue());
   }
 
   @Test

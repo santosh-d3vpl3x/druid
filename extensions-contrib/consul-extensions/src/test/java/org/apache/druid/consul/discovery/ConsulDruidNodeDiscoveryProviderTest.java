@@ -111,10 +111,19 @@ public class ConsulDruidNodeDiscoveryProviderTest
             .andReturn(initialNodes)
             .once();
 
-    // Simulate watch that times out with no changes
+    // First watch call with index 0
     EasyMock.expect(mockConsulApiClient.watchServices(
         EasyMock.eq(NodeRole.BROKER),
         EasyMock.eq(0L),
+        EasyMock.anyLong()
+    ))
+            .andReturn(new ConsulApiClient.ConsulWatchResult(initialNodes, 1L))
+            .once();
+
+    // Subsequent watch calls with index 1 (the response index from first call)
+    EasyMock.expect(mockConsulApiClient.watchServices(
+        EasyMock.eq(NodeRole.BROKER),
+        EasyMock.eq(1L),
         EasyMock.anyLong()
     ))
             .andReturn(new ConsulApiClient.ConsulWatchResult(initialNodes, 1L))

@@ -86,6 +86,7 @@ public class ConsulLeaderSelectorTest
   public void tearDown()
   {
     if (leaderSelector != null) {
+      EasyMock.reset(mockConsulClient);
       try {
         leaderSelector.unregisterListener();
       }
@@ -102,9 +103,13 @@ public class ConsulLeaderSelectorTest
     GetValue getValue = new GetValue();
     getValue.setValue(Base64.getEncoder().encodeToString(leaderValue.getBytes()));
 
-    Response<GetValue> response = new Response<>(getValue, 0L, true, 0L, null, 0L);
+    Response<GetValue> response = new Response<>(getValue, 0L, true, 0L);
 
-    EasyMock.expect(mockConsulClient.getKVValue(LOCK_KEY))
+    EasyMock.expect(mockConsulClient.getKVValue(
+        EasyMock.eq(LOCK_KEY),
+        EasyMock.isNull(),
+        EasyMock.eq(QueryParams.DEFAULT)
+    ))
             .andReturn(response)
             .once();
 
@@ -119,9 +124,13 @@ public class ConsulLeaderSelectorTest
   @Test
   public void testGetCurrentLeaderNoValue() throws Exception
   {
-    Response<GetValue> response = new Response<>(null, 0L, true, 0L, null, 0L);
+    Response<GetValue> response = new Response<>(null, 0L, true, 0L);
 
-    EasyMock.expect(mockConsulClient.getKVValue(LOCK_KEY))
+    EasyMock.expect(mockConsulClient.getKVValue(
+        EasyMock.eq(LOCK_KEY),
+        EasyMock.isNull(),
+        EasyMock.eq(QueryParams.DEFAULT)
+    ))
             .andReturn(response)
             .once();
 
@@ -156,11 +165,11 @@ public class ConsulLeaderSelectorTest
     EasyMock.expect(mockConsulClient.sessionCreate(
         EasyMock.capture(sessionCapture),
         EasyMock.eq(QueryParams.DEFAULT),
-        EasyMock.eq(config.getDatacenter())
+        EasyMock.isNull()
     ))
             .andAnswer(() -> {
               sessionCreatedLatch.countDown();
-              return new Response<>(SESSION_ID, 0L, true, 0L, null, 0L);
+              return new Response<>(SESSION_ID, 0L, true, 0L);
             })
             .once();
 
@@ -169,9 +178,11 @@ public class ConsulLeaderSelectorTest
     EasyMock.expect(mockConsulClient.setKVValue(
         EasyMock.eq(LOCK_KEY),
         EasyMock.anyString(),
-        EasyMock.capture(putParamsCapture)
+        EasyMock.isNull(),
+        EasyMock.capture(putParamsCapture),
+        EasyMock.eq(QueryParams.DEFAULT)
     ))
-            .andReturn(new Response<>(true, 0L, true, 0L, null, 0L))
+            .andReturn(new Response<>(true, 0L, true, 0L))
             .once();
 
     // Mock session renewal
@@ -180,9 +191,9 @@ public class ConsulLeaderSelectorTest
     EasyMock.expect(mockConsulClient.renewSession(
         EasyMock.eq(SESSION_ID),
         EasyMock.eq(QueryParams.DEFAULT),
-        EasyMock.eq(config.getDatacenter())
+        EasyMock.isNull()
     ))
-            .andReturn(new Response<>(session, 0L, true, 0L, null, 0L))
+            .andReturn(new Response<>(session, 0L, true, 0L))
             .anyTimes();
 
     EasyMock.replay(mockConsulClient);
@@ -216,7 +227,7 @@ public class ConsulLeaderSelectorTest
     NewSession createdSession = sessionCapture.getValue();
     Assert.assertNotNull(createdSession);
     Assert.assertEquals(Session.Behavior.DELETE, createdSession.getBehavior());
-    Assert.assertEquals("5s", createdSession.getLockDelay());
+    Assert.assertEquals(5L, createdSession.getLockDelay());
 
     // Verify lock acquisition used the session
     PutParams putParams = putParamsCapture.getValue();
@@ -235,18 +246,20 @@ public class ConsulLeaderSelectorTest
     EasyMock.expect(mockConsulClient.sessionCreate(
         EasyMock.anyObject(NewSession.class),
         EasyMock.eq(QueryParams.DEFAULT),
-        EasyMock.eq(config.getDatacenter())
+        EasyMock.isNull()
     ))
-            .andReturn(new Response<>(SESSION_ID, 0L, true, 0L, null, 0L))
+            .andReturn(new Response<>(SESSION_ID, 0L, true, 0L))
             .once();
 
     // Mock successful lock acquisition first
     EasyMock.expect(mockConsulClient.setKVValue(
         EasyMock.eq(LOCK_KEY),
         EasyMock.anyString(),
-        EasyMock.anyObject(PutParams.class)
+        EasyMock.isNull(),
+        EasyMock.anyObject(PutParams.class),
+        EasyMock.eq(QueryParams.DEFAULT)
     ))
-            .andReturn(new Response<>(true, 0L, true, 0L, null, 0L))
+            .andReturn(new Response<>(true, 0L, true, 0L))
             .once();
 
     // Mock session renewal
@@ -255,18 +268,20 @@ public class ConsulLeaderSelectorTest
     EasyMock.expect(mockConsulClient.renewSession(
         EasyMock.eq(SESSION_ID),
         EasyMock.eq(QueryParams.DEFAULT),
-        EasyMock.eq(config.getDatacenter())
+        EasyMock.isNull()
     ))
-            .andReturn(new Response<>(session, 0L, true, 0L, null, 0L))
+            .andReturn(new Response<>(session, 0L, true, 0L))
             .anyTimes();
 
     // Mock failed lock acquisition (lost leadership)
     EasyMock.expect(mockConsulClient.setKVValue(
         EasyMock.eq(LOCK_KEY),
         EasyMock.anyString(),
-        EasyMock.anyObject(PutParams.class)
+        EasyMock.isNull(),
+        EasyMock.anyObject(PutParams.class),
+        EasyMock.eq(QueryParams.DEFAULT)
     ))
-            .andReturn(new Response<>(false, 0L, true, 0L, null, 0L))
+            .andReturn(new Response<>(false, 0L, true, 0L))
             .anyTimes();
 
     EasyMock.replay(mockConsulClient);
@@ -309,27 +324,29 @@ public class ConsulLeaderSelectorTest
     EasyMock.expect(mockConsulClient.sessionCreate(
         EasyMock.anyObject(NewSession.class),
         EasyMock.eq(QueryParams.DEFAULT),
-        EasyMock.eq(config.getDatacenter())
+        EasyMock.isNull()
     ))
-            .andReturn(new Response<>(SESSION_ID, 0L, true, 0L, null, 0L))
+            .andReturn(new Response<>(SESSION_ID, 0L, true, 0L))
             .anyTimes();
 
     // Mock successful lock acquisition
     EasyMock.expect(mockConsulClient.setKVValue(
         EasyMock.eq(LOCK_KEY),
         EasyMock.anyString(),
-        EasyMock.anyObject(PutParams.class)
+        EasyMock.isNull(),
+        EasyMock.anyObject(PutParams.class),
+        EasyMock.eq(QueryParams.DEFAULT)
     ))
-            .andReturn(new Response<>(true, 0L, true, 0L, null, 0L))
+            .andReturn(new Response<>(true, 0L, true, 0L))
             .anyTimes();
 
     // Mock failed session renewal (session expired)
     EasyMock.expect(mockConsulClient.renewSession(
         EasyMock.eq(SESSION_ID),
         EasyMock.eq(QueryParams.DEFAULT),
-        EasyMock.eq(config.getDatacenter())
+        EasyMock.isNull()
     ))
-            .andReturn(new Response<Session>(null, 0L, true, 0L, null, 0L))
+            .andReturn(new Response<Session>(null, 0L, true, 0L))
             .anyTimes();
 
     EasyMock.replay(mockConsulClient);
@@ -367,32 +384,34 @@ public class ConsulLeaderSelectorTest
     EasyMock.expect(mockConsulClient.sessionCreate(
         EasyMock.anyObject(NewSession.class),
         EasyMock.eq(QueryParams.DEFAULT),
-        EasyMock.eq(config.getDatacenter())
+        EasyMock.isNull()
     ))
-            .andReturn(new Response<>(SESSION_ID, 0L, true, 0L, null, 0L))
+            .andReturn(new Response<>(SESSION_ID, 0L, true, 0L))
             .once();
 
     // Mock lock acquisition attempts
     EasyMock.expect(mockConsulClient.setKVValue(
         EasyMock.eq(LOCK_KEY),
         EasyMock.anyString(),
-        EasyMock.anyObject(PutParams.class)
+        EasyMock.isNull(),
+        EasyMock.anyObject(PutParams.class),
+        EasyMock.eq(QueryParams.DEFAULT)
     ))
-            .andReturn(new Response<>(false, 0L, true, 0L, null, 0L))
+            .andReturn(new Response<>(false, 0L, true, 0L))
             .anyTimes();
 
     // Mock session destruction
     Capture<String> sessionIdCapture = Capture.newInstance();
     EasyMock.expect(mockConsulClient.sessionDestroy(
         EasyMock.capture(sessionIdCapture),
+        EasyMock.eq(QueryParams.DEFAULT),
         EasyMock.isNull()
     ))
-            .andReturn(new Response<>(null, 0L, true, 0L, null, 0L))
+            .andReturn(new Response<>(null, 0L, true, 0L))
             .once();
 
     EasyMock.replay(mockConsulClient);
 
-    CountDownLatch initLatch = new CountDownLatch(1);
     DruidLeaderSelector.Listener listener = new DruidLeaderSelector.Listener()
     {
       @Override
@@ -407,11 +426,6 @@ public class ConsulLeaderSelectorTest
         // Not expected
       }
 
-      @Override
-      public void nodeViewInitialized()
-      {
-        initLatch.countDown();
-      }
     };
 
     leaderSelector.registerListener(listener);
