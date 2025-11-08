@@ -109,10 +109,9 @@ public class ConsulDiscoveryConfig
   {
     this.host = host == null ? "localhost" : host;
     this.port = port == null ? 8500 : port;
-
     Preconditions.checkArgument(
-        servicePrefix != null && !servicePrefix.isEmpty(),
-        "servicePrefix cannot be null or empty"
+            servicePrefix!=null && !servicePrefix.isEmpty(),
+            "servicePrefix cannot be null/empty"
     );
     this.servicePrefix = servicePrefix;
 
