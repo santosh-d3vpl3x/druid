@@ -21,7 +21,6 @@ package org.apache.druid.consul.discovery;
 
 import com.ecwid.consul.v1.ConsulClient;
 import org.apache.druid.https.SSLClientConfig;
-import org.apache.druid.java.util.common.StringUtils;
 import org.joda.time.Duration;
 import org.junit.After;
 import org.junit.Assert;
