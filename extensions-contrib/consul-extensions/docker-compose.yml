@@ -1,0 +1,195 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+#
+
+# Druid cluster using Consul for service discovery and leader election
+# NO ZooKeeper or Kubernetes required
+
+version: "2.2"
+
+volumes:
+  metadata_data: {}
+  middle_var: {}
+  historical_var: {}
+  broker_var: {}
+  coordinator_var: {}
+  router_var: {}
+  druid_shared: {}
+  consul_data: {}
+
+services:
+  # Consul for service discovery and leader election
+  consul:
+    container_name: consul
+    image: hashicorp/consul:latest
+    ports:
+      - "8500:8500"   # HTTP API
+      - "8600:8600/udp" # DNS
+    volumes:
+      - consul_data:/consul/data
+    command: agent -server -ui -bootstrap-expect=1 -client=0.0.0.0 -bind=0.0.0.0
+    environment:
+      - CONSUL_BIND_INTERFACE=eth0
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL for metadata storage
+  postgres:
+    container_name: postgres
+    image: postgres:16
+    ports:
+      - "5433:5432"  # Use 5433 externally to avoid conflicts
+    volumes:
+      - metadata_data:/var/lib/postgresql
+    environment:
+      - POSTGRES_PASSWORD=FoolishPassword
+      - POSTGRES_USER=druid
+      - POSTGRES_DB=druid
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U druid"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Coordinator - manages data availability and segments
+  coordinator:
+    image: apache/druid:local-consul
+    container_name: coordinator
+    volumes:
+      - druid_shared:/opt/shared
+      - coordinator_var:/opt/druid/var
+    depends_on:
+      consul:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    command:
+      - coordinator
+    env_file:
+      - environment-consul
+
+  # Overlord - manages data ingestion
+  overlord:
+    image: apache/druid:local-consul
+    container_name: overlord
+    volumes:
+      - druid_shared:/opt/shared
+      - middle_var:/opt/druid/var
+    depends_on:
+      consul:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8090:8090"
+    command:
+      - overlord
+    env_file:
+      - environment-consul
+
+  # Broker - handles queries
+  broker:
+    image: apache/druid:local-consul
+    container_name: broker
+    volumes:
+      - broker_var:/opt/druid/var
+    depends_on:
+      consul:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      coordinator:
+        condition: service_started
+    ports:
+      - "8082:8082"
+    command:
+      - broker
+    env_file:
+      - environment-consul
+
+  # Historical - stores and serves queryable data
+  historical:
+    image: apache/druid:local-consul
+    container_name: historical
+    volumes:
+      - druid_shared:/opt/shared
+      - historical_var:/opt/druid/var
+    depends_on:
+      consul:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      coordinator:
+        condition: service_started
+    ports:
+      - "8083:8083"
+    command:
+      - historical
+    env_file:
+      - environment-consul
+
+  # MiddleManager - executes ingestion tasks
+  middlemanager:
+    image: apache/druid:local-consul
+    container_name: middlemanager
+    volumes:
+      - druid_shared:/opt/shared
+      - middle_var:/opt/druid/var
+    depends_on:
+      consul:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      overlord:
+        condition: service_started
+    ports:
+      - "8091:8091"
+      - "8100-8105:8100-8105"
+    command:
+      - middleManager
+    env_file:
+      - environment-consul
+
+  # Router - provides unified API endpoint
+  router:
+    image: apache/druid:local-consul
+    container_name: router
+    volumes:
+      - router_var:/opt/druid/var
+    depends_on:
+      consul:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      broker:
+        condition: service_started
+    ports:
+      - "8888:8888"
+    command:
+      - router
+    env_file:
+      - environment-consul
+
+networks:
+  default:
+    driver: bridge
