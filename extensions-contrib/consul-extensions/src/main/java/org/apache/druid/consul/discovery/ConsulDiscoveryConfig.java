@@ -21,7 +21,6 @@ package org.apache.druid.consul.discovery;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.base.Preconditions;
 import org.apache.druid.https.SSLClientConfig;
 import org.joda.time.Duration;
 
@@ -114,10 +113,10 @@ public class ConsulDiscoveryConfig
   {
     this.host = host == null ? "localhost" : host;
     this.port = port == null ? 8500 : port;
-    Preconditions.checkArgument(
-            servicePrefix != null && !servicePrefix.isEmpty(),
-            "servicePrefix cannot be null/empty"
-    );
+
+    if (servicePrefix == null || servicePrefix.isEmpty()) {
+      throw new IllegalArgumentException("servicePrefix cannot be null/empty");
+    }
     this.servicePrefix = servicePrefix;
 
     this.aclToken = aclToken;
