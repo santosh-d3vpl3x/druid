@@ -79,9 +79,13 @@ druid.indexer.selector.type=consul
 | `druid.discovery.consul.watchSeconds` | ISO8601 Duration | Blocking query timeout for service changes. | `PT60S` | No |
 | `druid.discovery.consul.maxWatchRetries` | Long | Max watch retries before giving up. Use `-1` for unlimited (default). | `unlimited` | No |
 | `druid.discovery.consul.watchRetryDelay` | ISO8601 Duration | Wait time before retrying failed watch. | `PT10S` | No |
+| `druid.discovery.consul.leaderMaxErrorRetries` | Long | Max consecutive leader-election errors before giving up. Use `-1` for unlimited (default). | `unlimited` | No |
+| `druid.discovery.consul.leaderRetryBackoffMax` | ISO8601 Duration | Maximum backoff applied between leader-election retries. | `PT5M` | No |
 | `druid.discovery.consul.coordinatorLeaderLockPath` | String | Consul KV path for Coordinator leader lock. | `druid/leader/coordinator` | No |
 | `druid.discovery.consul.overlordLeaderLockPath` | String | Consul KV path for Overlord leader lock. | `druid/leader/overlord` | No |
 | `druid.discovery.consul.serviceTags.*` | String | Additional Consul service tags as key/value pairs (rendered as `key:value`). Useful for AZ/tier/version. | None | No |
+
+**Why is the default unlimited?** Most operators prefer the leader loop to keep retrying indefinitely so that the process can recover once Consul comes back. Setting a positive value forces the loop to exit after N consecutive failures, which surfaces the problem faster but requires an external restart mechanism. Pick the behavior that matches your SRE expectations; both watch and leader loops treat `-1` as unlimited.
 
 ### TLS Configuration
 
@@ -135,6 +139,10 @@ druid.indexer.selector.type=consul
 # Optional: discovery watch retry behavior
 # Use -1 for unlimited retries (default). Set a positive number to stop after N consecutive failures.
 # druid.discovery.consul.maxWatchRetries=-1
+
+# Optional: leader election retry behavior (also defaults to -1/unlimited)
+# druid.discovery.consul.leaderMaxErrorRetries=-1
+# druid.discovery.consul.leaderRetryBackoffMax=PT5M
 ```
 
 For a secure Consul cluster with ACL:
@@ -184,11 +192,41 @@ druid.discovery.consul.sslClientConfig.validateHostnames=true
 
 Consul "datacenter" (DC) is the scope for the service catalog, KV, sessions and locks. In cloud deployments, a single DC typically maps to a cloud region and spans multiple AZs (Consul servers are deployed across AZs for resilience). Leader election uses KV+sessions and is therefore DC‑scoped: all Coordinator/Overlord candidates must talk to the same DC to ensure a single regional leader.
 
-If you operate one Consul DC per region (recommended), you can omit `druid.discovery.consul.datacenter` and rely on the local agent's DC. If you run multiple DCs, set `druid.discovery.consul.datacenter` to pin discovery and election to the intended DC and avoid split‑brain.
+If you operate one Consul DC per region (recommended), you can omit `druid.discovery.consul.datacenter` and rely on the local agent's DC. If you run multiple DCs, set `druid.discovery.consul.datacenter` to pin discovery and election to the intended DC and avoid split-brain.
 
 ### Health Check TTL Behavior
 
 When registering services, the TTL for the Consul health check is set to 3x `druid.discovery.consul.healthCheckInterval` (with a minimum of 30s). Heartbeats are sent every `healthCheckInterval`. This margin avoids flapping due to scheduling jitter or transient delays. You can tune `healthCheckInterval` to balance responsiveness with traffic to your Consul agents.
+
+## Operational Verification
+
+After enabling the extension, run a quick “sanity walk” against Consul to ensure everything is wired up:
+
+1. **Confirm registration**
+   ```bash
+   consul catalog services -service druid-prod-broker -tag role:broker
+   ```
+   Replace `druid-prod-broker` with `servicePrefix-role`. You should see the node’s `host:port` and any custom tags.
+
+2. **Check TTL status**
+   ```bash
+   consul health service druid-prod-broker
+   ```
+   Healthy checks should show `Status: passing` and a TTL note (“Druid node is healthy”).
+
+3. **Inspect leader KV**
+   ```bash
+   consul kv get -detailed druid/leader/coordinator
+   ```
+   The output includes the session ID and the stored leader URI (e.g., `http://host:8081`). If no value is returned, no leader is registered yet.
+
+4. **Watch for updates**
+   ```bash
+   consul watch -type=service -service=druid-prod-broker
+   ```
+   As you start/stop Druid nodes, Consul should emit change notifications that line up with the extension’s logs and metrics.
+
+If any command returns empty output, double-check network reachability to the local Consul agent, ACL permissions, and `servicePrefix` spelling.
 
 ## How It Works
 
@@ -461,7 +499,11 @@ The extension emits lightweight Druid metrics when a ServiceEmitter is available
 - consul/announce/success|failure — node announce/unannounce outcomes
 - consul/healthcheck/failure — TTL heartbeat update failures
 - consul/watch/error|added|removed — discovery watch errors and changes
+- consul/watch/lifecycle — watcher thread start/stop events
 - consul/leader/become|stop|renew/fail — leader election transitions
+- consul/leader/ownership_mismatch — promotion skipped due to session mismatch
+- consul/leader/loop — leader election loop lifecycle
+- consul/leader/giveup — leader loop exceeded retry budget
 
 You should also monitor:
 1. Consul's built-in metrics and health checks
@@ -510,6 +552,11 @@ If you use the Prometheus emitter, add these to your metrics config (dimension m
     "type": "count",
     "help": "Druid nodes removed by Consul watch"
   },
+  "consul/watch/lifecycle": {
+    "dimensions": ["role", "state"],
+    "type": "count",
+    "help": "Consul watch thread start/stop events"
+  },
   "consul/leader/become": {
     "dimensions": ["lock"],
     "type": "count",
@@ -520,13 +567,30 @@ If you use the Prometheus emitter, add these to your metrics config (dimension m
     "type": "count",
     "help": "Leadership lost/stopped"
   },
+  "consul/leader/loop": {
+    "dimensions": ["lock", "state"],
+    "type": "count",
+    "help": "Leader election loop lifecycle events"
+  },
   "consul/leader/renew/fail": {
     "dimensions": ["lock"],
     "type": "count",
     "help": "Leader session renew failures"
+  },
+  "consul/leader/ownership_mismatch": {
+    "dimensions": ["lock"],
+    "type": "count",
+    "help": "Attempts blocked because Consul lock session changed unexpectedly"
+  },
+  "consul/leader/giveup": {
+    "dimensions": ["lock"],
+    "type": "count",
+    "help": "Leader election aborted after exceeding retry budget"
   }
 }
 ```
+
+Lifecycle metrics (`consul/watch/lifecycle`, `consul/leader/loop`) emit a `state` dimension (`start` or `stop`) so you can build gauges in Prometheus by subtracting stop counters from start counters.
 
 In Prometheus, you can then alert on spikes, for example:
 

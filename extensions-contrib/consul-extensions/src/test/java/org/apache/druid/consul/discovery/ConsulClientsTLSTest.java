@@ -125,6 +125,8 @@ public class ConsulClientsTLSTest
         Duration.millis(10000),             // watchSeconds
         null,                               // maxWatchRetries
         Duration.millis(10000),             // watchRetryDelay
+        null,                               // leaderMaxErrorRetries
+        null,                               // leaderRetryBackoffMax
         null                                // serviceTags
     );
 
@@ -193,6 +195,8 @@ public class ConsulClientsTLSTest
         Duration.millis(10000),
         null,
         Duration.millis(10000),
+        null,
+        null,
         null
     );
 
@@ -231,6 +235,8 @@ public class ConsulClientsTLSTest
         Duration.millis(10000),
         null,
         Duration.millis(10000),
+        null,
+        null,
         null
     );
 

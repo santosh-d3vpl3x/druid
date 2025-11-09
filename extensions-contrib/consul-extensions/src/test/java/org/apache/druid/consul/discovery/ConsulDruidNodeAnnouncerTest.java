@@ -54,6 +54,8 @@ public class ConsulDruidNodeAnnouncerTest
       Duration.millis(60000),
       null,
       Duration.millis(10000),
+      null,
+      null,
       null
   );
 
@@ -64,15 +66,12 @@ public class ConsulDruidNodeAnnouncerTest
   public void setUp()
   {
     mockConsulApiClient = EasyMock.createMock(ConsulApiClient.class);
-    announcer = new ConsulDruidNodeAnnouncer(mockConsulApiClient, config);
   }
 
   @After
   public void tearDown()
   {
-    if (announcer != null) {
-      announcer.stop();
-    }
+    // Don't call stop() here - each test will handle its own lifecycle
   }
 
   @Test
@@ -82,18 +81,23 @@ public class ConsulDruidNodeAnnouncerTest
     mockConsulApiClient.registerService(EasyMock.capture(nodeCapture));
     EasyMock.expectLastCall().once();
 
-    // Expect deregisterService to be called during cleanup
+    // Expect health check TTL updates (may happen during test)
+    mockConsulApiClient.passTtlCheck(EasyMock.anyString(), EasyMock.anyString());
+    EasyMock.expectLastCall().anyTimes();
+
+    // Expect deregisterService to be called during stop()
     mockConsulApiClient.deregisterService(EasyMock.anyString());
     EasyMock.expectLastCall().once();
 
     EasyMock.replay(mockConsulApiClient);
 
+    announcer = new ConsulDruidNodeAnnouncer(mockConsulApiClient, config);
+    announcer.start();
     announcer.announce(testNode);
     Assert.assertEquals(testNode, nodeCapture.getValue());
 
-    // Manually stop announcer to trigger cleanup before verify
+    // Explicitly stop to trigger cleanup
     announcer.stop();
-    announcer = null;
 
     EasyMock.verify(mockConsulApiClient);
   }
@@ -105,12 +109,19 @@ public class ConsulDruidNodeAnnouncerTest
     mockConsulApiClient.registerService(EasyMock.capture(registerCapture));
     EasyMock.expectLastCall().once();
 
+    // Expect deregisterService to be called once from unannounce()
     Capture<String> deregisterCapture = Capture.newInstance();
     mockConsulApiClient.deregisterService(EasyMock.capture(deregisterCapture));
     EasyMock.expectLastCall().once();
 
+    // Expect health check TTL updates (may happen during test)
+    mockConsulApiClient.passTtlCheck(EasyMock.anyString(), EasyMock.anyString());
+    EasyMock.expectLastCall().anyTimes();
+
     EasyMock.replay(mockConsulApiClient);
 
+    announcer = new ConsulDruidNodeAnnouncer(mockConsulApiClient, config);
+    announcer.start();
     announcer.announce(testNode);
     announcer.unannounce(testNode);
 
@@ -127,7 +138,16 @@ public class ConsulDruidNodeAnnouncerTest
     mockConsulApiClient.registerService(EasyMock.anyObject(DiscoveryDruidNode.class));
     EasyMock.expectLastCall().andThrow(new RuntimeException("Consul unavailable"));
 
+    // Expect health check TTL updates (may happen during test)
+    mockConsulApiClient.passTtlCheck(EasyMock.anyString(), EasyMock.anyString());
+    EasyMock.expectLastCall().anyTimes();
+
+    // No deregisterService expected since announce failed and no nodes were added to map
+
     EasyMock.replay(mockConsulApiClient);
+
+    announcer = new ConsulDruidNodeAnnouncer(mockConsulApiClient, config);
+    announcer.start();
 
     try {
       announcer.announce(testNode);
@@ -136,6 +156,8 @@ public class ConsulDruidNodeAnnouncerTest
     catch (RuntimeException e) {
       Assert.assertTrue(e.getMessage().contains("Failed to announce"));
     }
+
+    // Don't need to stop since no nodes were announced
 
     EasyMock.verify(mockConsulApiClient);
   }

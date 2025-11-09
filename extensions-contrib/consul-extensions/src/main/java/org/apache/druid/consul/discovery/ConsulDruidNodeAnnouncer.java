@@ -21,8 +21,11 @@ package org.apache.druid.consul.discovery;
 
 import com.google.common.base.Preconditions;
 import com.google.inject.Inject;
+import org.apache.druid.concurrent.LifecycleLock;
 import org.apache.druid.discovery.DiscoveryDruidNode;
 import org.apache.druid.discovery.DruidNodeAnnouncer;
+import org.apache.druid.guice.ManageLifecycle;
+import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.concurrent.Execs;
 import org.apache.druid.java.util.common.lifecycle.LifecycleStart;
 import org.apache.druid.java.util.common.lifecycle.LifecycleStop;
@@ -36,6 +39,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * Announces Druid nodes to Consul and maintains their health status via TTL checks.
  */
+@ManageLifecycle
 public class ConsulDruidNodeAnnouncer implements DruidNodeAnnouncer
 {
   private static final Logger LOGGER = new Logger(ConsulDruidNodeAnnouncer.class);
@@ -46,6 +50,7 @@ public class ConsulDruidNodeAnnouncer implements DruidNodeAnnouncer
   private final ScheduledExecutorService healthCheckExecutor;
   @com.google.inject.Inject(optional = true)
   private org.apache.druid.java.util.emitter.service.ServiceEmitter emitter;
+  private final LifecycleLock lifecycleLock = new LifecycleLock();
 
   @Inject
   public ConsulDruidNodeAnnouncer(
@@ -61,24 +66,50 @@ public class ConsulDruidNodeAnnouncer implements DruidNodeAnnouncer
   @LifecycleStart
   public void start()
   {
-    LOGGER.info("Starting ConsulDruidNodeAnnouncer");
+    if (!lifecycleLock.canStart()) {
+      throw new ISE("can't start");
+    }
 
-    // Schedule periodic health check updates
-    long intervalMs = config.getHealthCheckInterval().getMillis();
-    healthCheckExecutor.scheduleAtFixedRate(
-        this::updateHealthChecks,
-        0L,
-        intervalMs,
-        TimeUnit.MILLISECONDS
-    );
+    try {
+      LOGGER.info("Starting ConsulDruidNodeAnnouncer");
+
+      // Schedule periodic health check updates
+      long intervalMs = config.getHealthCheckInterval().getMillis();
+      healthCheckExecutor.scheduleAtFixedRate(
+          this::updateHealthChecks,
+          0L,
+          intervalMs,
+          TimeUnit.MILLISECONDS
+      );
+      lifecycleLock.started();
+    }
+    finally {
+      lifecycleLock.exitStart();
+    }
   }
 
   @LifecycleStop
   public void stop()
   {
+    if (!lifecycleLock.canStop()) {
+      throw new ISE("can't stop");
+    }
+
     LOGGER.info("Stopping ConsulDruidNodeAnnouncer");
 
+    // Shut down health check executor
     healthCheckExecutor.shutdownNow();
+
+    // Wait for health check thread to terminate
+    try {
+      if (!healthCheckExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+        LOGGER.warn("Health check executor did not terminate in time");
+      }
+    }
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      LOGGER.warn("Interrupted while waiting for health check termination");
+    }
 
     // Deregister all announced nodes
     for (String serviceId : announcedNodes.keySet()) {
@@ -91,11 +122,16 @@ public class ConsulDruidNodeAnnouncer implements DruidNodeAnnouncer
     }
 
     announcedNodes.clear();
+    lifecycleLock.exitStop();
   }
 
   @Override
   public void announce(DiscoveryDruidNode discoveryDruidNode)
   {
+    if (!lifecycleLock.awaitStarted(1, TimeUnit.SECONDS)) {
+      throw new ISE("Announcer not started");
+    }
+
     LOGGER.info("Announcing DiscoveryDruidNode[%s]", discoveryDruidNode);
 
     try {
@@ -120,6 +156,10 @@ public class ConsulDruidNodeAnnouncer implements DruidNodeAnnouncer
   @Override
   public void unannounce(DiscoveryDruidNode discoveryDruidNode)
   {
+    if (!lifecycleLock.awaitStarted(1, TimeUnit.SECONDS)) {
+      throw new ISE("Announcer not started");
+    }
+
     LOGGER.info("Unannouncing DiscoveryDruidNode[%s]", discoveryDruidNode);
 
     try {

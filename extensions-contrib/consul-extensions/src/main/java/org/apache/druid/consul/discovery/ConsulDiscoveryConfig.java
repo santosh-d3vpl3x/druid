@@ -88,6 +88,12 @@ public class ConsulDiscoveryConfig
   private final Duration watchRetryDelay;
 
   @JsonProperty
+  private final long leaderMaxErrorRetries;
+
+  @JsonProperty
+  private final Duration leaderRetryBackoffMax;
+
+  @JsonProperty
   @Nullable
   private final java.util.Map<String, String> serviceTags;
 
@@ -108,11 +114,17 @@ public class ConsulDiscoveryConfig
       @JsonProperty("watchSeconds") Duration watchSeconds,
       @JsonProperty("maxWatchRetries") Long maxWatchRetries,
       @JsonProperty("watchRetryDelay") Duration watchRetryDelay,
+      @JsonProperty("leaderMaxErrorRetries") Long leaderMaxErrorRetries,
+      @JsonProperty("leaderRetryBackoffMax") Duration leaderRetryBackoffMax,
       @JsonProperty("serviceTags") java.util.Map<String, String> serviceTags
   )
   {
     this.host = host == null ? "localhost" : host;
-    this.port = port == null ? 8500 : port;
+    int portValue = port == null ? 8500 : port;
+    if (portValue < 1 || portValue > 65535) {
+      throw new IllegalArgumentException("Port must be between 1 and 65535");
+    }
+    this.port = portValue;
 
     if (servicePrefix == null || servicePrefix.isEmpty()) {
       throw new IllegalArgumentException("servicePrefix cannot be null/empty");
@@ -130,16 +142,50 @@ public class ConsulDiscoveryConfig
     this.sslClientConfig = sslClientConfig;
     this.basicAuthUser = basicAuthUser;
     this.basicAuthPassword = basicAuthPassword;
-    this.healthCheckInterval = healthCheckInterval == null ? Duration.millis(10000) : healthCheckInterval;
-    this.deregisterAfter = deregisterAfter == null ? Duration.millis(90000) : deregisterAfter;
-    this.watchSeconds = watchSeconds == null ? Duration.millis(60000) : watchSeconds;
+
+    // Validate durations are non-negative
+    Duration healthCheckIntervalValue = healthCheckInterval == null ? Duration.millis(10000) : healthCheckInterval;
+    if (healthCheckIntervalValue.getMillis() < 0) {
+      throw new IllegalArgumentException("healthCheckInterval cannot be negative");
+    }
+    this.healthCheckInterval = healthCheckIntervalValue;
+
+    Duration deregisterAfterValue = deregisterAfter == null ? Duration.millis(90000) : deregisterAfter;
+    if (deregisterAfterValue.getMillis() < 0) {
+      throw new IllegalArgumentException("deregisterAfter cannot be negative");
+    }
+    this.deregisterAfter = deregisterAfterValue;
+
+    Duration watchSecondsValue = watchSeconds == null ? Duration.millis(60000) : watchSeconds;
+    if (watchSecondsValue.getMillis() < 0) {
+      throw new IllegalArgumentException("watchSeconds cannot be negative");
+    }
+    this.watchSeconds = watchSecondsValue;
     // Treat null or non-positive values as unlimited
     if (maxWatchRetries == null || maxWatchRetries <= 0L) {
       this.maxWatchRetries = Long.MAX_VALUE;
     } else {
       this.maxWatchRetries = maxWatchRetries;
     }
-    this.watchRetryDelay = watchRetryDelay == null ? Duration.millis(10000) : watchRetryDelay;
+
+    Duration watchRetryDelayValue = watchRetryDelay == null ? Duration.millis(10000) : watchRetryDelay;
+    if (watchRetryDelayValue.getMillis() < 0) {
+      throw new IllegalArgumentException("watchRetryDelay cannot be negative");
+    }
+    this.watchRetryDelay = watchRetryDelayValue;
+
+    if (leaderMaxErrorRetries == null || leaderMaxErrorRetries <= 0L) {
+      this.leaderMaxErrorRetries = Long.MAX_VALUE;
+    } else {
+      this.leaderMaxErrorRetries = leaderMaxErrorRetries;
+    }
+
+    Duration leaderRetryBackoffMaxValue = leaderRetryBackoffMax == null ? Duration.millis(300_000) : leaderRetryBackoffMax;
+    if (leaderRetryBackoffMaxValue.getMillis() <= 0) {
+      throw new IllegalArgumentException("leaderRetryBackoffMax must be positive");
+    }
+    this.leaderRetryBackoffMax = leaderRetryBackoffMaxValue;
+
     this.serviceTags = serviceTags;
   }
 
@@ -239,6 +285,18 @@ public class ConsulDiscoveryConfig
   }
 
   @JsonProperty
+  public long getLeaderMaxErrorRetries()
+  {
+    return leaderMaxErrorRetries;
+  }
+
+  @JsonProperty
+  public Duration getLeaderRetryBackoffMax()
+  {
+    return leaderRetryBackoffMax;
+  }
+
+  @JsonProperty
   @Nullable
   public java.util.Map<String, String> getServiceTags()
   {
@@ -270,6 +328,8 @@ public class ConsulDiscoveryConfig
            Objects.equals(deregisterAfter, that.deregisterAfter) &&
            Objects.equals(watchSeconds, that.watchSeconds) &&
            Objects.equals(watchRetryDelay, that.watchRetryDelay) &&
+           leaderMaxErrorRetries == that.leaderMaxErrorRetries &&
+           Objects.equals(leaderRetryBackoffMax, that.leaderRetryBackoffMax) &&
            Objects.equals(serviceTags, that.serviceTags);
   }
 
@@ -292,6 +352,8 @@ public class ConsulDiscoveryConfig
         watchSeconds,
         maxWatchRetries,
         watchRetryDelay,
+        leaderMaxErrorRetries,
+        leaderRetryBackoffMax,
         serviceTags
     );
   }
@@ -304,12 +366,14 @@ public class ConsulDiscoveryConfig
            ", port=" + port +
            ", servicePrefix='" + servicePrefix + '\'' +
            ", datacenter='" + datacenter + '\'' +
-           ", basicAuthUser='" + basicAuthUser + '\'' +
+           ", basicAuthUser='" + (basicAuthUser != null ? "*****" : "null") + '\'' +
            ", healthCheckInterval=" + healthCheckInterval +
            ", deregisterAfter=" + deregisterAfter +
            ", watchSeconds=" + watchSeconds +
            ", maxWatchRetries=" + maxWatchRetries +
            ", watchRetryDelay=" + watchRetryDelay +
+           ", leaderMaxErrorRetries=" + (leaderMaxErrorRetries == Long.MAX_VALUE ? "-1" : leaderMaxErrorRetries) +
+           ", leaderRetryBackoffMax=" + leaderRetryBackoffMax +
            ", serviceTags=" + serviceTags +
            '}';
   }

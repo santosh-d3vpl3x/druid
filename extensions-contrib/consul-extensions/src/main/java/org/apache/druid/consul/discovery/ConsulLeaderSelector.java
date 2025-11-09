@@ -66,14 +66,14 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
   @com.google.inject.Inject(optional = true)
   private org.apache.druid.java.util.emitter.service.ServiceEmitter emitter;
 
-  private DruidLeaderSelector.Listener listener = null;
+  private volatile DruidLeaderSelector.Listener listener = null;
   private final AtomicBoolean leader = new AtomicBoolean(false);
   private final AtomicInteger term = new AtomicInteger(0);
 
   private ScheduledExecutorService executorService;
   private volatile String sessionId;
   private volatile boolean stopping = false;
-  private int errorRetryCount = 0;
+  private long errorRetryCount = 0;
 
   public ConsulLeaderSelector(
       DruidNode self,
@@ -201,6 +201,7 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
   private void leaderElectionLoop()
   {
     LOGGER.info("Starting leader election loop for [%s]", lockKey);
+    ConsulMetrics.emitCount(emitter, "consul/leader/loop", 1, "lock", lockKey, "state", "start");
 
     while (!stopping && !Thread.currentThread().isInterrupted()) {
       try {
@@ -214,8 +215,22 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
         boolean acquired = tryAcquireLock(sessionId);
 
         if (acquired && !leader.get()) {
-          // We just became leader
-          becomeLeader();
+          boolean interrupted = Thread.currentThread().isInterrupted();
+          if (stopping || interrupted) {
+            LOGGER.info(
+                "Skipping leadership for [%s] because selector is stopping (interrupted=%s)",
+                lockKey,
+                interrupted
+            );
+          } else if (sessionId == null) {
+            LOGGER.warn("Skipping leadership for [%s] because session is null", lockKey);
+          } else if (validateLockOwnership(sessionId)) {
+            // We just became leader
+            becomeLeader();
+          } else {
+            LOGGER.warn("Lock ownership validation failed for [%s]; will retry", lockKey);
+            emitOwnershipMismatchMetric();
+          }
         } else if (!acquired && leader.get()) {
           // We lost leadership
           loseLeadership();
@@ -249,9 +264,20 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
 
         // Exponential backoff with jitter on errors, then retry
         errorRetryCount++;
+        long maxLeaderRetries = config.getLeaderMaxErrorRetries();
+        if (maxLeaderRetries != Long.MAX_VALUE && errorRetryCount > maxLeaderRetries) {
+          LOGGER.error(
+              "Leader selector for [%s] exceeded max error retries [%d], giving up.",
+              lockKey,
+              maxLeaderRetries
+          );
+          ConsulMetrics.emitCount(emitter, "consul/leader/giveup", 1, "lock", lockKey);
+          break;
+        }
         long base = Math.max(1L, config.getWatchRetryDelay().getMillis());
         int exp = (int) Math.min(6, errorRetryCount);
-        long backoff = Math.min(300_000L, base * (1L << exp));
+        long backoffCap = config.getLeaderRetryBackoffMax().getMillis();
+        long backoff = Math.min(backoffCap, base * (1L << exp));
         long sleepMs = (long) (backoff * (0.5 + java.util.concurrent.ThreadLocalRandom.current().nextDouble()));
         try {
           Thread.sleep(sleepMs);
@@ -264,6 +290,7 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
     }
 
     LOGGER.info("Exiting leader election loop for [%s]", lockKey);
+    ConsulMetrics.emitCount(emitter, "consul/leader/loop", 1, "lock", lockKey, "state", "stop");
   }
 
   private String createSession()
@@ -343,7 +370,21 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
     LOGGER.info("Becoming leader for [%s]", lockKey);
 
     try {
-      leader.set(true);
+      String currentSession = this.sessionId;
+      if (currentSession == null) {
+        LOGGER.warn("Session missing before promotion for [%s]; aborting becomeLeader", lockKey);
+        emitOwnershipMismatchMetric();
+        return;
+      }
+      if (!validateLockOwnership(currentSession)) {
+        LOGGER.warn("Ownership check failed inside becomeLeader for [%s]; skipping promotion", lockKey);
+        emitOwnershipMismatchMetric();
+        return;
+      }
+      if (!leader.compareAndSet(false, true)) {
+        LOGGER.info("Leader flag already true for [%s]; skipping duplicate becomeLeader", lockKey);
+        return;
+      }
       term.incrementAndGet();
       listener.becomeLeader();
       LOGGER.info("Successfully became leader for [%s], term [%d]", lockKey, term.get());
@@ -367,6 +408,51 @@ public class ConsulLeaderSelector implements DruidLeaderSelector
       // In production, you might want to exit here like K8s does
       // System.exit(1);
     }
+  }
+
+  private boolean validateLockOwnership(String expectedSessionId)
+  {
+    try {
+      Response<GetValue> response = consulClient.getKVValue(
+          lockKey,
+          config.getAclToken(),
+          buildQueryParams()
+      );
+      if (response == null || response.getValue() == null) {
+        LOGGER.warn("Lock key [%s] missing when validating ownership", lockKey);
+        return false;
+      }
+      String actualSessionId = response.getValue().getSession();
+      if (actualSessionId == null) {
+        LOGGER.warn("Lock key [%s] has no session owner", lockKey);
+        return false;
+      }
+      boolean matches = expectedSessionId.equals(actualSessionId);
+      if (!matches) {
+        LOGGER.warn(
+            "Lock key [%s] owned by session [%s], expected [%s]",
+            lockKey,
+            actualSessionId,
+            expectedSessionId
+        );
+      }
+      return matches;
+    }
+    catch (Exception e) {
+      LOGGER.error(e, "Failed to validate lock ownership for [%s]", lockKey);
+      return false;
+    }
+  }
+
+  private void emitOwnershipMismatchMetric()
+  {
+    ConsulMetrics.emitCount(
+        emitter,
+        "consul/leader/ownership_mismatch",
+        1,
+        "lock",
+        lockKey
+    );
   }
 
   private void loseLeadership()

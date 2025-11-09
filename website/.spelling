@@ -2576,6 +2576,11 @@ druid.discovery.consul.serviceTags.version
 180s
 120s
 TTLs
+backoff
+SRE
+reachability
+ownership_mismatch
+giveup
 
 - ../docs/development/extensions-contrib/spectator-histogram.md
 SpectatorHistogram

@@ -44,6 +44,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -147,10 +148,25 @@ public class ConsulDruidNodeDiscoveryProvider extends DruidNodeDiscoveryProvider
 
     LOGGER.info("Stopping ConsulDruidNodeDiscoveryProvider");
 
+    // Stop all watchers and remove them from the map
     for (NodeRoleWatcher watcher : nodeRoleWatchers.values()) {
       watcher.stop();
     }
-    listenerExecutor.shutdownNow();
+    nodeRoleWatchers.clear();
+
+    // Wait for watcher threads to finish before shutting down listener executor
+    try {
+      listenerExecutor.shutdown();
+      if (!listenerExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+        LOGGER.warn("Listener executor did not terminate in time");
+        listenerExecutor.shutdownNow();
+      }
+    }
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      LOGGER.warn("Interrupted while waiting for listener executor termination");
+      listenerExecutor.shutdownNow();
+    }
 
     LOGGER.info("Stopped ConsulDruidNodeDiscoveryProvider");
     lifecycleLock.exitStopAndReset();
@@ -172,7 +188,7 @@ public class ConsulDruidNodeDiscoveryProvider extends DruidNodeDiscoveryProvider
     private final NodeRole nodeRole;
     private final BaseNodeRoleWatcher baseNodeRoleWatcher;
 
-    private long retryCount = 0;
+    private final AtomicLong retryCount = new AtomicLong(0);
 
     NodeRoleWatcher(
         ScheduledExecutorService listenerExecutor,
@@ -260,15 +276,15 @@ public class ConsulDruidNodeDiscoveryProvider extends DruidNodeDiscoveryProvider
           }
 
           // Reset retry count on success
-          retryCount = 0;
+          retryCount.set(0);
         }
         catch (Throwable ex) {
           LOGGER.error(ex, "Exception while watching for role[%s].", nodeRole);
 
           ConsulMetrics.emitCount(emitter, "consul/watch/error", 1, "role", nodeRole.getJsonName());
 
-          retryCount++;
-          if (config.getMaxWatchRetries() != Long.MAX_VALUE && retryCount > config.getMaxWatchRetries()) {
+          long count = retryCount.incrementAndGet();
+          if (config.getMaxWatchRetries() != Long.MAX_VALUE && count > config.getMaxWatchRetries()) {
             LOGGER.error(
                 "Max watch retries [%d] exceeded for role[%s]; giving up and stopping watcher.",
                 config.getMaxWatchRetries(),
@@ -280,7 +296,7 @@ public class ConsulDruidNodeDiscoveryProvider extends DruidNodeDiscoveryProvider
 
           // Exponential backoff with jitter, capped at 5 minutes
           long base = Math.max(1L, config.getWatchRetryDelay().getMillis());
-          int exp = (int) Math.min(6, retryCount); // cap exponential growth
+          int exp = (int) Math.min(6, count); // cap exponential growth
           long backoff = Math.min(300_000L, base * (1L << exp));
           long jitter = (long) (backoff * (0.5 + java.util.concurrent.ThreadLocalRandom.current().nextDouble()));
           sleep(jitter);
@@ -311,6 +327,15 @@ public class ConsulDruidNodeDiscoveryProvider extends DruidNodeDiscoveryProvider
         this.watchExecutor = Execs.singleThreaded(this.getClass().getName() + nodeRole.getJsonName());
         watchExecutor.submit(this::watch);
         lifecycleLock.started();
+        ConsulMetrics.emitCount(
+            emitter,
+            "consul/watch/lifecycle",
+            1,
+            "role",
+            nodeRole.getJsonName(),
+            "state",
+            "start"
+        );
         LOGGER.info("Started NodeRoleWatcher for role[%s].", nodeRole);
       }
       finally {
@@ -331,6 +356,15 @@ public class ConsulDruidNodeDiscoveryProvider extends DruidNodeDiscoveryProvider
         if (!watchExecutor.awaitTermination(15, TimeUnit.SECONDS)) {
           LOGGER.warn("Failed to stop watchExecutor for role[%s]", nodeRole);
         }
+        ConsulMetrics.emitCount(
+            emitter,
+            "consul/watch/lifecycle",
+            1,
+            "role",
+            nodeRole.getJsonName(),
+            "state",
+            "stop"
+        );
         LOGGER.info("Stopped NodeRoleWatcher for role[%s].", nodeRole);
       }
       catch (Exception ex) {

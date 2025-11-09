@@ -32,27 +32,7 @@ public class ConsulDiscoveryConfigTest
   @Test
   public void testDefaultValuesSerde() throws Exception
   {
-    testSerde(
-        "{\"servicePrefix\": \"druid\"}\n",
-        new ConsulDiscoveryConfig(
-            null,
-            null,
-            "druid",
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null
-        )
-    );
+    testSerde("{\"servicePrefix\": \"druid\"}\n");
   }
 
   @Test
@@ -70,25 +50,7 @@ public class ConsulDiscoveryConfigTest
         + "  \"watchSeconds\": \"PT30S\",\n"
         + "  \"maxWatchRetries\": 100,\n"
         + "  \"watchRetryDelay\": \"PT5S\"\n"
-        + "}\n",
-        new ConsulDiscoveryConfig(
-            "consul.example.com",
-            8600,
-            "test-druid",
-            "secret-token",
-            "dc1",
-            null,
-            null,
-            null,
-            null,
-            null,
-            Duration.millis(5000),
-            Duration.millis(30000),
-            Duration.millis(30000),
-            100L,
-            Duration.millis(5000),
-            null
-        )
+        + "}\n"
     );
   }
 
@@ -101,25 +63,7 @@ public class ConsulDiscoveryConfigTest
         + "  \"port\": 8501,\n"
         + "  \"servicePrefix\": \"druid-secure\",\n"
         + "  \"aclToken\": \"secret-token\"\n"
-        + "}\n",
-        new ConsulDiscoveryConfig(
-            "consul.example.com",
-            8501,
-            "druid-secure",
-            "secret-token",
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null
-        )
+        + "}\n"
     );
   }
 
@@ -131,61 +75,28 @@ public class ConsulDiscoveryConfigTest
         + "  \"servicePrefix\": \"druid\",\n"
         + "  \"basicAuthUser\": \"admin\",\n"
         + "  \"basicAuthPassword\": \"secret\"\n"
-        + "}\n",
-        new ConsulDiscoveryConfig(
-            null,
-            null,
-            "druid",
-            null,
-            null,
-            null,
-            null,
-            null,
-            "admin",
-            "secret",
-            null,
-            null,
-            null,
-            null,
-            null,
-            null
-        )
+        + "}\n"
     );
   }
 
   @Test
   public void testNegativeMaxWatchRetriesMeansUnlimited() throws Exception
   {
-    testSerde(
+    ConsulDiscoveryConfig config = testSerdeAndReturn(
         "{\n"
         + "  \"servicePrefix\": \"druid\",\n"
         + "  \"maxWatchRetries\": -1\n"
-        + "}\n",
-        new ConsulDiscoveryConfig(
-            null,
-            null,
-            "druid",
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null
-        )
+        + "}\n"
     );
+    Assert.assertEquals(Long.MAX_VALUE, config.getMaxWatchRetries());
   }
 
   @Test(expected = IllegalArgumentException.class)
   public void testNullServicePrefixThrows()
   {
     new ConsulDiscoveryConfig(
+        null,
+        null,
         null,
         null,
         null,
@@ -224,19 +135,79 @@ public class ConsulDiscoveryConfigTest
         null,
         null,
         null,
+        null,
+        null,
         null
     );
   }
 
-  private void testSerde(String jsonStr, ConsulDiscoveryConfig expected) throws Exception
+  @Test
+  public void testLeaderRetryOverrides() throws Exception
   {
-    ConsulDiscoveryConfig actual = jsonMapper.readValue(
-        jsonMapper.writeValueAsString(
-            jsonMapper.readValue(jsonStr, ConsulDiscoveryConfig.class)
-        ),
-        ConsulDiscoveryConfig.class
+    ConsulDiscoveryConfig config = testSerdeAndReturn(
+        "{\n"
+        + "  \"servicePrefix\": \"druid\",\n"
+        + "  \"leaderMaxErrorRetries\": 5,\n"
+        + "  \"leaderRetryBackoffMax\": \"PT30S\"\n"
+        + "}\n"
+    );
+    Assert.assertEquals(5L, config.getLeaderMaxErrorRetries());
+    Assert.assertEquals(Duration.millis(30000), config.getLeaderRetryBackoffMax());
+  }
+
+  @Test
+  public void testToStringMasksSensitiveData()
+  {
+    ConsulDiscoveryConfig config = new ConsulDiscoveryConfig(
+        "localhost",
+        8500,
+        "druid",
+        "secret-acl-token",
+        "dc1",
+        null,
+        null,
+        null,
+        "admin",
+        "password",
+        Duration.millis(1000),
+        Duration.millis(5000),
+        Duration.millis(1000),
+        null,
+        Duration.millis(1000),
+        null,
+        null,
+        null
     );
 
-    Assert.assertEquals(expected, actual);
+    String toString = config.toString();
+
+    Assert.assertFalse(toString.contains("secret-acl-token"));
+    Assert.assertFalse(toString.contains("password"));
+    Assert.assertFalse(toString.contains("admin"));
+    Assert.assertTrue(toString.contains("*****"));
+    Assert.assertTrue(toString.contains("localhost"));
+    Assert.assertTrue(toString.contains("druid"));
+    Assert.assertTrue(toString.contains("8500"));
+  }
+
+  private void testSerde(String jsonStr) throws Exception
+  {
+    ConsulDiscoveryConfig config = jsonMapper.readValue(jsonStr, ConsulDiscoveryConfig.class);
+    ConsulDiscoveryConfig roundTrip = jsonMapper.readValue(
+        jsonMapper.writeValueAsString(config),
+        ConsulDiscoveryConfig.class
+    );
+    Assert.assertEquals(config, roundTrip);
+  }
+
+  private ConsulDiscoveryConfig testSerdeAndReturn(String jsonStr) throws Exception
+  {
+    ConsulDiscoveryConfig config = jsonMapper.readValue(jsonStr, ConsulDiscoveryConfig.class);
+    ConsulDiscoveryConfig roundTrip = jsonMapper.readValue(
+        jsonMapper.writeValueAsString(config),
+        ConsulDiscoveryConfig.class
+    );
+    Assert.assertEquals(config, roundTrip);
+    return config;
   }
 }

@@ -66,6 +66,8 @@ public class ConsulDruidNodeDiscoveryProviderTest
       Duration.millis(60000),
       null,
       Duration.millis(10000),
+      null,
+      null,
       null
   );
 

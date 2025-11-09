@@ -79,6 +79,8 @@ public class ConsulLeaderElectionIntTest
       Duration.millis(10000),
       null,
       Duration.millis(5000),
+      null,
+      null,
       null
   );
 

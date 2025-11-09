@@ -40,19 +40,23 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ConsulLeaderSelectorTest
 {
   private static final String LOCK_KEY = "druid/leader/coordinator";
   private static final String SESSION_ID = "test-session-id";
+  private static final String SESSION_ID_TWO = "test-session-id-2";
 
   private ConsulClient mockConsulClient;
   private ConsulLeaderSelector leaderSelector;
+  private ConsulDiscoveryConfig testConfig;
+  private DruidNode selfNode;
 
   @Before
   public void setUp()
   {
-    DruidNode selfNode = new DruidNode(
+    selfNode = new DruidNode(
         "druid/coordinator",
         "test-host",
         true,
@@ -62,7 +66,7 @@ public class ConsulLeaderSelectorTest
         false
     );
 
-    ConsulDiscoveryConfig config = new ConsulDiscoveryConfig(
+    testConfig = new ConsulDiscoveryConfig(
         "localhost",
         8500,
         "druid",
@@ -78,11 +82,13 @@ public class ConsulLeaderSelectorTest
         Duration.millis(1000),
         null,
         Duration.millis(1000),
+        null,
+        null,
         null
     );
 
     mockConsulClient = EasyMock.createMock(ConsulClient.class);
-    leaderSelector = new ConsulLeaderSelector(selfNode, LOCK_KEY, config, mockConsulClient);
+    leaderSelector = new ConsulLeaderSelector(selfNode, LOCK_KEY, testConfig, mockConsulClient);
   }
 
   @After
@@ -199,6 +205,8 @@ public class ConsulLeaderSelectorTest
             .andReturn(new Response<>(session, 0L, true, 0L))
             .anyTimes();
 
+    expectLockOwnershipCheck(SESSION_ID);
+
     EasyMock.replay(mockConsulClient);
 
     DruidLeaderSelector.Listener listener = new DruidLeaderSelector.Listener()
@@ -235,6 +243,234 @@ public class ConsulLeaderSelectorTest
     // Verify lock acquisition used the session
     PutParams putParams = putParamsCapture.getValue();
     Assert.assertEquals(SESSION_ID, putParams.getAcquireSession());
+
+    EasyMock.verify(mockConsulClient);
+  }
+
+  @Test
+  public void testConcurrentSelectorsOnlyOneLeader() throws Exception
+  {
+    ConsulLeaderSelector firstSelector = leaderSelector;
+    DruidNode otherNode = new DruidNode(
+        "druid/coordinator",
+        "test-host-2",
+        true,
+        8081,
+        null,
+        true,
+        false
+    );
+    ConsulLeaderSelector secondSelector = new ConsulLeaderSelector(otherNode, LOCK_KEY, testConfig, mockConsulClient);
+
+    CountDownLatch firstLeaderLatch = new CountDownLatch(1);
+    CountDownLatch secondAttemptLatch = new CountDownLatch(1);
+    AtomicInteger leaderCallbacks = new AtomicInteger(0);
+
+    // First selector session creation
+    EasyMock.expect(mockConsulClient.sessionCreate(
+        EasyMock.anyObject(NewSession.class),
+        EasyMock.eq(QueryParams.DEFAULT),
+        EasyMock.isNull()
+    ))
+            .andReturn(new Response<>(SESSION_ID, 0L, true, 0L))
+            .once();
+
+    // Second selector session creation
+    EasyMock.expect(mockConsulClient.sessionCreate(
+        EasyMock.anyObject(NewSession.class),
+        EasyMock.eq(QueryParams.DEFAULT),
+        EasyMock.isNull()
+    ))
+            .andReturn(new Response<>(SESSION_ID_TWO, 0L, true, 0L))
+            .once();
+
+    // First selector acquires lock
+    EasyMock.expect(mockConsulClient.setKVValue(
+        EasyMock.eq(LOCK_KEY),
+        EasyMock.anyString(),
+        EasyMock.isNull(),
+        EasyMock.anyObject(PutParams.class),
+        EasyMock.eq(QueryParams.DEFAULT)
+    ))
+            .andReturn(new Response<>(true, 0L, true, 0L))
+            .once();
+
+    // Second selector fails to acquire lock
+    EasyMock.expect(mockConsulClient.setKVValue(
+        EasyMock.eq(LOCK_KEY),
+        EasyMock.anyString(),
+        EasyMock.isNull(),
+        EasyMock.anyObject(PutParams.class),
+        EasyMock.eq(QueryParams.DEFAULT)
+    ))
+            .andAnswer(() -> {
+              secondAttemptLatch.countDown();
+              return new Response<>(false, 0L, true, 0L);
+            })
+            .once();
+
+    expectLockOwnershipCheck(SESSION_ID);
+
+    Session session = new Session();
+    session.setId(SESSION_ID);
+    EasyMock.expect(mockConsulClient.renewSession(
+        EasyMock.eq(SESSION_ID),
+        EasyMock.eq(QueryParams.DEFAULT),
+        EasyMock.isNull()
+    ))
+            .andReturn(new Response<>(session, 0L, true, 0L))
+            .anyTimes();
+
+    // Expect sessions to be destroyed during cleanup
+    EasyMock.expect(mockConsulClient.sessionDestroy(
+        EasyMock.eq(SESSION_ID),
+        EasyMock.eq(QueryParams.DEFAULT),
+        EasyMock.isNull()
+    ))
+            .andReturn(new Response<>(null, 0L, true, 0L))
+            .once();
+
+    EasyMock.expect(mockConsulClient.sessionDestroy(
+        EasyMock.eq(SESSION_ID_TWO),
+        EasyMock.eq(QueryParams.DEFAULT),
+        EasyMock.isNull()
+    ))
+            .andReturn(new Response<>(null, 0L, true, 0L))
+            .once();
+
+    EasyMock.replay(mockConsulClient);
+
+    DruidLeaderSelector.Listener listener1 = new DruidLeaderSelector.Listener()
+    {
+      @Override
+      public void becomeLeader()
+      {
+        leaderCallbacks.incrementAndGet();
+        firstLeaderLatch.countDown();
+      }
+
+      @Override
+      public void stopBeingLeader()
+      {
+        // no-op for this test
+      }
+    };
+
+    DruidLeaderSelector.Listener listener2 = new DruidLeaderSelector.Listener()
+    {
+      @Override
+      public void becomeLeader()
+      {
+        leaderCallbacks.incrementAndGet();
+      }
+
+      @Override
+      public void stopBeingLeader()
+      {
+        // no-op
+      }
+    };
+
+    firstSelector.registerListener(listener1);
+    Assert.assertTrue("First selector did not become leader", firstLeaderLatch.await(5, TimeUnit.SECONDS));
+
+    secondSelector.registerListener(listener2);
+    Assert.assertTrue("Second selector did not attempt to acquire lock", secondAttemptLatch.await(5, TimeUnit.SECONDS));
+
+    // Allow some time for any unexpected leader callbacks
+    Thread.sleep(200);
+
+    Assert.assertEquals("Only one selector should become leader", 1, leaderCallbacks.get());
+    Assert.assertTrue(firstSelector.isLeader());
+    Assert.assertFalse(secondSelector.isLeader());
+
+    secondSelector.unregisterListener();
+    firstSelector.unregisterListener();
+    leaderSelector = null; // Prevent tearDown from double-cleaning
+
+    EasyMock.verify(mockConsulClient);
+  }
+
+  @Test
+  public void testOwnershipValidationPreventsPromotion() throws Exception
+  {
+    CountDownLatch mismatchLatch = new CountDownLatch(1);
+
+    EasyMock.expect(mockConsulClient.sessionCreate(
+        EasyMock.anyObject(NewSession.class),
+        EasyMock.eq(QueryParams.DEFAULT),
+        EasyMock.isNull()
+    ))
+            .andReturn(new Response<>(SESSION_ID, 0L, true, 0L))
+            .once();
+
+    EasyMock.expect(mockConsulClient.setKVValue(
+        EasyMock.eq(LOCK_KEY),
+        EasyMock.anyString(),
+        EasyMock.isNull(),
+        EasyMock.anyObject(PutParams.class),
+        EasyMock.eq(QueryParams.DEFAULT)
+    ))
+            .andReturn(new Response<>(true, 0L, true, 0L))
+            .once();
+
+    EasyMock.expect(mockConsulClient.setKVValue(
+        EasyMock.eq(LOCK_KEY),
+        EasyMock.anyString(),
+        EasyMock.isNull(),
+        EasyMock.anyObject(PutParams.class),
+        EasyMock.eq(QueryParams.DEFAULT)
+    ))
+            .andReturn(new Response<>(false, 0L, true, 0L))
+            .anyTimes();
+
+    EasyMock.expect(mockConsulClient.getKVValue(
+        EasyMock.eq(LOCK_KEY),
+        EasyMock.isNull(),
+        EasyMock.eq(QueryParams.DEFAULT)
+    ))
+            .andAnswer(() -> {
+              mismatchLatch.countDown();
+              GetValue value = new GetValue();
+              value.setSession("other-session");
+              return new Response<>(value, 0L, true, 0L);
+            })
+            .once();
+
+    EasyMock.expect(mockConsulClient.sessionDestroy(
+        EasyMock.eq(SESSION_ID),
+        EasyMock.eq(QueryParams.DEFAULT),
+        EasyMock.isNull()
+    ))
+            .andReturn(new Response<>(null, 0L, true, 0L))
+            .once();
+
+    EasyMock.replay(mockConsulClient);
+
+    CountDownLatch leaderLatch = new CountDownLatch(1);
+    leaderSelector.registerListener(new DruidLeaderSelector.Listener()
+    {
+      @Override
+      public void becomeLeader()
+      {
+        leaderLatch.countDown();
+      }
+
+      @Override
+      public void stopBeingLeader()
+      {
+        // no-op
+      }
+    });
+
+    Assert.assertTrue("Ownership mismatch was not triggered", mismatchLatch.await(5, TimeUnit.SECONDS));
+
+    // Wait briefly to ensure no leader promotion occurred
+    Assert.assertFalse("Leader callback should not fire", leaderLatch.await(200, TimeUnit.MILLISECONDS));
+    Assert.assertFalse("Selector should not become leader", leaderSelector.isLeader());
+
+    leaderSelector.unregisterListener();
+    leaderSelector = null;
 
     EasyMock.verify(mockConsulClient);
   }
@@ -286,6 +522,8 @@ public class ConsulLeaderSelectorTest
     ))
             .andReturn(new Response<>(false, 0L, true, 0L))
             .anyTimes();
+
+    expectLockOwnershipCheck(SESSION_ID);
 
     EasyMock.replay(mockConsulClient);
 
@@ -351,6 +589,8 @@ public class ConsulLeaderSelectorTest
     ))
             .andReturn(new Response<>(null, 0L, true, 0L))
             .anyTimes();
+
+    expectLockOwnershipCheck(SESSION_ID);
 
     EasyMock.replay(mockConsulClient);
 
@@ -443,5 +683,19 @@ public class ConsulLeaderSelectorTest
     Assert.assertEquals(SESSION_ID, sessionIdCapture.getValue());
 
     EasyMock.verify(mockConsulClient);
+  }
+
+  private void expectLockOwnershipCheck(String sessionId)
+  {
+    GetValue value = new GetValue();
+    value.setSession(sessionId);
+    Response<GetValue> response = new Response<>(value, 0L, true, 0L);
+    EasyMock.expect(mockConsulClient.getKVValue(
+            EasyMock.eq(LOCK_KEY),
+            EasyMock.isNull(),
+            EasyMock.eq(QueryParams.DEFAULT)
+        ))
+        .andReturn(response)
+        .anyTimes();
   }
 }
