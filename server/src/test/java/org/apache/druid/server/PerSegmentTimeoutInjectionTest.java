@@ -216,6 +216,7 @@ public class PerSegmentTimeoutInjectionTest
         NoopPolicyEnforcer.instance(),
         Collections.emptyList(),
         perSegmentTimeoutConfig,
+        new IngressCellResolver(),
         System.currentTimeMillis(),
         System.nanoTime()
     );

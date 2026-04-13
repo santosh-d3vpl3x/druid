@@ -134,6 +134,8 @@ public class QueryContexts
   // SQL statement resource specific keys
   public static final String CTX_EXECUTION_MODE = "executionMode";
   public static final String CTX_CELL = "cell";
+  public static final String CTX_INGRESS_CELL = "ingressCell";
+  public static final String CTX_EXECUTION_CELL = "executionCell";
   public static final String CTX_CELL_EXECUTION_MODE = "cellExecutionMode";
   public static final String CTX_ALLOW_REALTIME_EXCEPTION = "allowRealtimeException";
   public static final String CTX_FAILOVER_REASON = "failoverReason";

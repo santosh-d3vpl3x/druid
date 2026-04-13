@@ -236,10 +236,13 @@ public class ServerSelector implements Overshadowable<ServerSelector>
           && !realtimeServers.isEmpty()
       ) {
         LOG.info(
-            "Using realtime fallback for queryId[%s], cell[%s], mode[%s], crossCell[true]",
+            "Using realtime fallback for queryId[%s], cell[%s], ingressCell[%s], executionCell[realtime], mode[%s], crossCell[true], failoverReason[%s], failoverTicket[%s]",
             query.getId(),
             query.context().getString(QueryContexts.CTX_CELL),
-            query.context().getString(QueryContexts.CTX_CELL_EXECUTION_MODE)
+            query.context().getString(QueryContexts.CTX_INGRESS_CELL),
+            query.context().getString(QueryContexts.CTX_CELL_EXECUTION_MODE),
+            query.context().getString(QueryContexts.CTX_FAILOVER_REASON),
+            query.context().getString(QueryContexts.CTX_FAILOVER_TICKET)
         );
         return realtimeTierStrategy.pick(query, realtimeServers, segment.get());
       }

@@ -104,6 +104,7 @@ public class QueryLifecycle
   private final PolicyEnforcer policyEnforcer;
   private final List<QueryBlocklistRule> queryBlocklist;
   private final Map<String, PerSegmentTimeoutConfig> perSegmentTimeoutConfig;
+  private final IngressCellResolver ingressCellResolver;
   private final long startMs;
   private final long startNs;
 
@@ -128,6 +129,7 @@ public class QueryLifecycle
       final PolicyEnforcer policyEnforcer,
       final List<QueryBlocklistRule> queryBlocklist,
       final Map<String, PerSegmentTimeoutConfig> perSegmentTimeoutConfig,
+      final IngressCellResolver ingressCellResolver,
       final long startMs,
       final long startNs
   )
@@ -143,6 +145,7 @@ public class QueryLifecycle
     this.policyEnforcer = policyEnforcer;
     this.queryBlocklist = queryBlocklist;
     this.perSegmentTimeoutConfig = perSegmentTimeoutConfig;
+    this.ingressCellResolver = ingressCellResolver;
     this.startMs = startMs;
     this.startNs = startNs;
   }
@@ -213,6 +216,11 @@ public class QueryLifecycle
    */
   public void initialize(final Query<?> baseQuery)
   {
+    initialize(baseQuery, null);
+  }
+
+  public void initialize(final Query<?> baseQuery, @Nullable final HttpServletRequest request)
+  {
     transition(State.NEW, State.INITIALIZED);
 
     userContextKeys = new HashSet<>(baseQuery.getContext().keySet());
@@ -224,7 +232,15 @@ public class QueryLifecycle
     // Start with system defaults, apply per-datasource override, then user context wins
     Map<String, Object> contextWithDefaults = new HashMap<>(queryConfigProvider.getContext());
     applyPerDatasourcePerSegmentTimeout(baseQuery, contextWithDefaults, queryId);
-    Map<String, Object> finalContext = QueryContexts.override(contextWithDefaults, baseQuery.getContext());
+    final Map<String, Object> finalContext = QueryContexts.override(contextWithDefaults, baseQuery.getContext());
+    final String ingressCell = ingressCellResolver.resolve(request);
+    if (!finalContext.containsKey(QueryContexts.CTX_CELL) && ingressCell != null) {
+      finalContext.put(QueryContexts.CTX_CELL, ingressCell);
+    }
+    if (!finalContext.containsKey(QueryContexts.CTX_INGRESS_CELL) && ingressCell != null) {
+      finalContext.put(QueryContexts.CTX_INGRESS_CELL, ingressCell);
+    }
+    finalContext.putIfAbsent(QueryContexts.CTX_CELL_EXECUTION_MODE, QueryContexts.CellExecutionMode.STRICT_CELL.name());
     QueryContexts.validateAndNormalizeCellContext(finalContext);
     finalContext.put(BaseQuery.QUERY_ID, queryId);
 
