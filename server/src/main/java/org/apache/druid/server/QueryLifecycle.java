@@ -225,6 +225,7 @@ public class QueryLifecycle
     Map<String, Object> contextWithDefaults = new HashMap<>(queryConfigProvider.getContext());
     applyPerDatasourcePerSegmentTimeout(baseQuery, contextWithDefaults, queryId);
     Map<String, Object> finalContext = QueryContexts.override(contextWithDefaults, baseQuery.getContext());
+    QueryContexts.validateAndNormalizeCellContext(finalContext);
     finalContext.put(BaseQuery.QUERY_ID, queryId);
 
     this.baseQuery = baseQuery.withOverriddenContext(finalContext);

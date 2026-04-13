@@ -38,9 +38,11 @@ import org.apache.druid.java.util.emitter.service.ServiceEmitter;
 import org.apache.druid.query.DataSource;
 import org.apache.druid.query.Druids;
 import org.apache.druid.query.GenericQueryMetricsFactory;
+import org.apache.druid.query.BadQueryContextException;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.QueryConfigProvider;
 import org.apache.druid.query.QueryContextTest;
+import org.apache.druid.query.QueryContexts;
 import org.apache.druid.query.QueryMetrics;
 import org.apache.druid.query.QueryRunner;
 import org.apache.druid.query.QueryRunnerFactoryConglomerate;
@@ -644,6 +646,57 @@ public class QueryLifecycleTest
     lifecycle = createLifecycle();
     lifecycle.initialize(query);
     Assert.assertTrue(lifecycle.authorize(authenticationResult).allowAccessWithNoRestriction());
+  }
+
+  @Test
+  public void testInitializeValidatesAndNormalizesCellContext()
+  {
+    EasyMock.expect(queryConfig.getContext()).andReturn(ImmutableMap.of()).anyTimes();
+    EasyMock.expect(conglomerate.getToolChest(EasyMock.anyObject()))
+            .andReturn(toolChest)
+            .times(1);
+
+    replayAll();
+
+    final Map<String, Object> userContext = new HashMap<>();
+    userContext.put(QueryContexts.CTX_CELL, "  us-east-1a ");
+    userContext.put(QueryContexts.CTX_CELL_EXECUTION_MODE, "strict_cell");
+    final TimeseriesQuery query = Druids.newTimeseriesQueryBuilder()
+                                        .dataSource(DATASOURCE)
+                                        .intervals(ImmutableList.of(Intervals.ETERNITY))
+                                        .aggregators(new CountAggregatorFactory("chocula"))
+                                        .context(userContext)
+                                        .build();
+
+    final QueryLifecycle lifecycle = createLifecycle();
+    lifecycle.initialize(query);
+
+    Assert.assertEquals("us-east-1a", lifecycle.getQuery().getContext().get(QueryContexts.CTX_CELL));
+    Assert.assertEquals(
+        QueryContexts.CellExecutionMode.STRICT_CELL.name(),
+        lifecycle.getQuery().getContext().get(QueryContexts.CTX_CELL_EXECUTION_MODE)
+    );
+    Assert.assertEquals(false, lifecycle.getQuery().getContext().get(QueryContexts.CTX_ALLOW_REALTIME_EXCEPTION));
+  }
+
+  @Test
+  public void testInitializeRejectsInvalidCellContext()
+  {
+    expectedException.expect(BadQueryContextException.class);
+    expectedException.expectMessage("Expected key [cell] to be a non-empty String");
+
+    EasyMock.expect(queryConfig.getContext()).andReturn(ImmutableMap.of()).anyTimes();
+    replayAll();
+
+    final TimeseriesQuery query = Druids.newTimeseriesQueryBuilder()
+                                        .dataSource(DATASOURCE)
+                                        .intervals(ImmutableList.of(Intervals.ETERNITY))
+                                        .aggregators(new CountAggregatorFactory("chocula"))
+                                        .context(ImmutableMap.of(QueryContexts.CTX_CELL_EXECUTION_MODE, "STRICT_CELL"))
+                                        .build();
+
+    final QueryLifecycle lifecycle = createLifecycle();
+    lifecycle.initialize(query);
   }
 
   @Test

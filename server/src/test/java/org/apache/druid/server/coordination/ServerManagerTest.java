@@ -30,6 +30,7 @@ import com.google.inject.Guice;
 import com.google.inject.Inject;
 import com.google.inject.testing.fieldbinder.Bind;
 import com.google.inject.testing.fieldbinder.BoundFieldModule;
+import org.apache.druid.client.DruidServerConfig;
 import org.apache.druid.client.cache.Cache;
 import org.apache.druid.client.cache.CacheConfig;
 import org.apache.druid.client.cache.CachePopulator;
@@ -52,6 +53,7 @@ import org.apache.druid.java.util.common.guava.YieldingAccumulator;
 import org.apache.druid.java.util.common.guava.YieldingSequenceBase;
 import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.java.util.emitter.service.ServiceEmitter;
+import org.apache.druid.java.util.metrics.StubServiceEmitter;
 import org.apache.druid.query.DataSource;
 import org.apache.druid.query.DefaultQueryMetrics;
 import org.apache.druid.query.DefaultQueryRunnerFactoryConglomerate;
@@ -59,6 +61,8 @@ import org.apache.druid.query.Druids;
 import org.apache.druid.query.ForwardingQueryProcessingPool;
 import org.apache.druid.query.NoopQueryRunner;
 import org.apache.druid.query.Query;
+import org.apache.druid.query.BadQueryContextException;
+import org.apache.druid.query.QueryContexts;
 import org.apache.druid.query.QueryDataSource;
 import org.apache.druid.query.QueryMetrics;
 import org.apache.druid.query.QueryPlus;
@@ -91,12 +95,12 @@ import org.apache.druid.segment.loading.SegmentLoadingException;
 import org.apache.druid.server.SegmentManager;
 import org.apache.druid.server.ServerManager;
 import org.apache.druid.server.initialization.ServerConfig;
-import org.apache.druid.server.metrics.NoopServiceEmitter;
 import org.apache.druid.test.utils.TestSegmentCacheManager;
 import org.apache.druid.timeline.DataSegment;
 import org.apache.druid.timeline.TimelineObjectHolder;
 import org.apache.druid.timeline.VersionedIntervalTimeline;
 import org.apache.druid.timeline.partition.PartitionChunk;
+import org.easymock.EasyMock;
 import org.joda.time.Interval;
 import org.junit.Assert;
 import org.junit.Assume;
@@ -143,6 +147,8 @@ public class ServerManagerTest
   @Bind
   private ServerConfig serverConfig;
   @Bind
+  private DruidServerConfig druidServerConfig;
+  @Bind
   private ServiceEmitter serviceEmitter;
   @Bind
   private QueryProcessingPool queryProcessingPool;
@@ -158,6 +164,7 @@ public class ServerManagerTest
 
   private MyQueryRunnerFactory factory;
   private ExecutorService serverManagerExec;
+  private StubServiceEmitter stubServiceEmitter;
 
   @Inject
   private ServerManager serverManager;
@@ -165,8 +172,9 @@ public class ServerManagerTest
   @Before
   public void setUp()
   {
-    serviceEmitter = new NoopServiceEmitter();
-    EmittingLogger.registerEmitter(new NoopServiceEmitter());
+    stubServiceEmitter = StubServiceEmitter.createStarted();
+    serviceEmitter = stubServiceEmitter;
+    EmittingLogger.registerEmitter(stubServiceEmitter);
     segmentManager = new SegmentManager(new TestSegmentCacheManager(DATA_SEGMENTS));
     for (DataSegment segment : DATA_SEGMENTS) {
       loadQueryable(segment.getDataSource(), segment.getVersion(), segment.getInterval());
@@ -186,6 +194,9 @@ public class ServerManagerTest
     cache = new LocalCacheProvider().get();
     cacheConfig = new CacheConfig();
     serverConfig = new ServerConfig();
+    druidServerConfig = EasyMock.createMock(DruidServerConfig.class);
+    EasyMock.expect(druidServerConfig.getTier()).andReturn("us-east-1a").anyTimes();
+    EasyMock.replay(druidServerConfig);
     policyEnforcer = NoopPolicyEnforcer.instance();
 
     Guice.createInjector(BoundFieldModule.of(this)).injectMembers(this);
@@ -637,6 +648,62 @@ public class ServerManagerTest
     serverManager.getQueryRunnerForIntervals(queryOnRestricted, ImmutableList.of(interval))
                  .run(QueryPlus.wrap(queryOnRestricted))
                  .toList();
+  }
+
+  @Test
+  public void testGetQueryRunnerForIntervals_rejectsStrictCellTierMismatch()
+  {
+    final Interval interval = Intervals.of("P1d/2011-04-01");
+    final SearchQuery strictCellQuery = searchQuery("test", interval, Granularities.ALL).withOverriddenContext(
+        ImmutableMap.of(
+            QueryContexts.CTX_CELL, "us-west-2a",
+            QueryContexts.CTX_CELL_EXECUTION_MODE, QueryContexts.CellExecutionMode.STRICT_CELL.name()
+        )
+    );
+
+    final DruidException exception = Assert.assertThrows(
+        DruidException.class,
+        () -> serverManager.getQueryRunnerForIntervals(strictCellQuery, ImmutableList.of(interval))
+    );
+    Assert.assertEquals(DruidException.Category.INVALID_INPUT, exception.getCategory());
+    Assert.assertEquals(DruidException.Persona.USER, exception.getTargetPersona());
+    stubServiceEmitter.verifyValue("query/cell/strictReject", 1L);
+  }
+
+  @Test
+  public void testGetQueryRunnerForIntervals_failoverAcceptedEmitsMetric()
+  {
+    final Interval interval = Intervals.of("P1d/2011-04-01");
+    final SearchQuery failoverQuery = searchQuery("test", interval, Granularities.ALL).withOverriddenContext(
+        ImmutableMap.of(
+            QueryContexts.CTX_CELL, "us-west-2a",
+            QueryContexts.CTX_CELL_EXECUTION_MODE, QueryContexts.CellExecutionMode.CELL_FAILOVER.name(),
+            QueryContexts.CTX_FAILOVER_REASON, "AZ outage",
+            QueryContexts.CTX_FAILOVER_TICKET, "INC-12345"
+        )
+    );
+
+    serverManager.getQueryRunnerForIntervals(failoverQuery, ImmutableList.of(interval));
+    stubServiceEmitter.verifyValue("query/cell/failoverAccepted", 1L);
+  }
+
+  @Test
+  public void testGetQueryRunnerForIntervals_failoverDeniedEmitsMetric()
+  {
+    final Interval interval = Intervals.of("P1d/2011-04-01");
+    final SearchQuery invalidFailoverQuery = searchQuery("test", interval, Granularities.ALL).withOverriddenContext(
+        ImmutableMap.of(
+            QueryContexts.CTX_CELL, "us-west-2a",
+            QueryContexts.CTX_CELL_EXECUTION_MODE, QueryContexts.CellExecutionMode.CELL_FAILOVER.name(),
+            QueryContexts.CTX_FAILOVER_REASON, "AZ outage"
+        )
+    );
+
+    Assert.assertThrows(
+        BadQueryContextException.class,
+        () -> serverManager.getQueryRunnerForIntervals(invalidFailoverQuery, ImmutableList.of(interval))
+    );
+    stubServiceEmitter.verifyValue("query/cell/failoverDenied", 1L);
   }
 
   private void waitForTestVerificationAndCleanup(Future future)

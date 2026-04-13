@@ -334,4 +334,86 @@ public class QueryContextsTest
     );
   }
 
+  @Test
+  public void testValidateAndNormalizeCellContextNoOpWhenCellKeysAbsent()
+  {
+    final Map<String, Object> context = new HashMap<>();
+    QueryContexts.validateAndNormalizeCellContext(context);
+    Assert.assertTrue(context.isEmpty());
+  }
+
+  @Test
+  public void testValidateAndNormalizeCellContextStrictModeDefaults()
+  {
+    final Map<String, Object> context = new HashMap<>();
+    context.put(QueryContexts.CTX_CELL, "  us-east-1a ");
+
+    QueryContexts.validateAndNormalizeCellContext(context);
+
+    Assert.assertEquals("us-east-1a", context.get(QueryContexts.CTX_CELL));
+    Assert.assertEquals(
+        QueryContexts.CellExecutionMode.STRICT_CELL.name(),
+        context.get(QueryContexts.CTX_CELL_EXECUTION_MODE)
+    );
+    Assert.assertEquals(false, context.get(QueryContexts.CTX_ALLOW_REALTIME_EXCEPTION));
+  }
+
+  @Test
+  public void testValidateAndNormalizeCellContextMissingCellThrows()
+  {
+    final Map<String, Object> context = new HashMap<>();
+    context.put(QueryContexts.CTX_CELL_EXECUTION_MODE, QueryContexts.CellExecutionMode.STRICT_CELL.name());
+
+    exception.expect(BadQueryContextException.class);
+    exception.expectMessage("Expected key [cell] to be a non-empty String");
+    QueryContexts.validateAndNormalizeCellContext(context);
+  }
+
+  @Test
+  public void testValidateAndNormalizeCellContextFailoverRequiresReason()
+  {
+    final Map<String, Object> context = new HashMap<>();
+    context.put(QueryContexts.CTX_CELL, "us-east-1a");
+    context.put(QueryContexts.CTX_CELL_EXECUTION_MODE, QueryContexts.CellExecutionMode.CELL_FAILOVER.name());
+    context.put(QueryContexts.CTX_FAILOVER_TICKET, "INC-123");
+
+    exception.expect(BadQueryContextException.class);
+    exception.expectMessage("Expected key [failoverReason] to be a non-empty String when cellExecutionMode=CELL_FAILOVER");
+    QueryContexts.validateAndNormalizeCellContext(context);
+  }
+
+  @Test
+  public void testValidateAndNormalizeCellContextFailoverRequiresTicket()
+  {
+    final Map<String, Object> context = new HashMap<>();
+    context.put(QueryContexts.CTX_CELL, "us-east-1a");
+    context.put(QueryContexts.CTX_CELL_EXECUTION_MODE, QueryContexts.CellExecutionMode.CELL_FAILOVER.name());
+    context.put(QueryContexts.CTX_FAILOVER_REASON, "AZ outage");
+
+    exception.expect(BadQueryContextException.class);
+    exception.expectMessage("Expected key [failoverTicket] to be a non-empty String when cellExecutionMode=CELL_FAILOVER");
+    QueryContexts.validateAndNormalizeCellContext(context);
+  }
+
+  @Test
+  public void testValidateAndNormalizeCellContextFailoverNormalizes()
+  {
+    final Map<String, Object> context = new HashMap<>();
+    context.put(QueryContexts.CTX_CELL, "us-east-1a");
+    context.put(QueryContexts.CTX_CELL_EXECUTION_MODE, "cell_failover");
+    context.put(QueryContexts.CTX_FAILOVER_REASON, "  az degradation ");
+    context.put(QueryContexts.CTX_FAILOVER_TICKET, "  INC-12345 ");
+    context.put(QueryContexts.CTX_ALLOW_REALTIME_EXCEPTION, "true");
+
+    QueryContexts.validateAndNormalizeCellContext(context);
+
+    Assert.assertEquals(
+        QueryContexts.CellExecutionMode.CELL_FAILOVER.name(),
+        context.get(QueryContexts.CTX_CELL_EXECUTION_MODE)
+    );
+    Assert.assertEquals("az degradation", context.get(QueryContexts.CTX_FAILOVER_REASON));
+    Assert.assertEquals("INC-12345", context.get(QueryContexts.CTX_FAILOVER_TICKET));
+    Assert.assertEquals(true, context.get(QueryContexts.CTX_ALLOW_REALTIME_EXCEPTION));
+  }
+
 }

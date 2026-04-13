@@ -73,6 +73,7 @@ import org.joda.time.Interval;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -141,14 +142,40 @@ public class MSQControllerTask extends AbstractTask implements ClientTaskQuery, 
         context
     );
 
-    this.querySpec = querySpec;
+    final Map<String, Object> normalizedQueryContext = new HashMap<>(querySpec.getContext().asMap());
+    QueryContexts.validateAndNormalizeCellContext(normalizedQueryContext);
+
+    this.querySpec = querySpec.withOverriddenContext(normalizedQueryContext);
     this.sqlQuery = sqlQuery;
-    this.sqlQueryContext = sqlQueryContext;
+    if (sqlQueryContext == null) {
+      this.sqlQueryContext = null;
+    } else {
+      this.sqlQueryContext = new HashMap<>(sqlQueryContext);
+      QueryContexts.validateAndNormalizeCellContext(this.sqlQueryContext);
+    }
     this.sqlResultsContext = sqlResultsContext;
     this.sqlTypeNames = sqlTypeNames;
     this.nativeTypeNames = nativeTypeNames;
 
+    propagateCellContextToTaskContext(normalizedQueryContext);
     addToContext(Tasks.FORCE_TIME_CHUNK_LOCK_KEY, true);
+  }
+
+  private void propagateCellContextToTaskContext(final Map<String, Object> normalizedQueryContext)
+  {
+    propagateCellContextKey(normalizedQueryContext, QueryContexts.CTX_CELL);
+    propagateCellContextKey(normalizedQueryContext, QueryContexts.CTX_CELL_EXECUTION_MODE);
+    propagateCellContextKey(normalizedQueryContext, QueryContexts.CTX_ALLOW_REALTIME_EXCEPTION);
+    propagateCellContextKey(normalizedQueryContext, QueryContexts.CTX_FAILOVER_REASON);
+    propagateCellContextKey(normalizedQueryContext, QueryContexts.CTX_FAILOVER_TICKET);
+  }
+
+  private void propagateCellContextKey(final Map<String, Object> normalizedQueryContext, final String key)
+  {
+    final Object value = normalizedQueryContext.get(key);
+    if (value != null) {
+      addToContext(key, value);
+    }
   }
 
   public MSQControllerTask(

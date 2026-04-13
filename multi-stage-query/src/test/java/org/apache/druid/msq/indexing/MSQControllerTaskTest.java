@@ -19,6 +19,7 @@
 
 package org.apache.druid.msq.indexing;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import org.apache.druid.error.DruidException;
@@ -33,9 +34,12 @@ import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.Intervals;
 import org.apache.druid.java.util.common.granularity.Granularities;
 import org.apache.druid.msq.indexing.destination.DataSourceMSQDestination;
+import org.apache.druid.query.BadQueryContextException;
 import org.apache.druid.query.Druids;
+import org.apache.druid.query.QueryContexts;
 import org.apache.druid.query.scan.ScanQuery;
 import org.apache.druid.query.spec.MultipleIntervalSegmentSpec;
+import org.apache.druid.segment.TestHelper;
 import org.apache.druid.server.coordination.BroadcastDatasourceLoadingSpec;
 import org.apache.druid.server.lookup.cache.LookupLoadingSpec;
 import org.apache.druid.sql.calcite.planner.ColumnMapping;
@@ -54,6 +58,7 @@ public class MSQControllerTaskTest
   private static final List<Interval> INTERVALS = Collections.singletonList(
       Intervals.of("2011-04-01/2011-04-03")
   );
+  private static final ObjectMapper JSON_MAPPER = TestHelper.makeJsonMapper();
 
   private static LegacyMSQSpec.Builder msqSpecBuilder()
   {
@@ -222,6 +227,116 @@ public class MSQControllerTaskTest
         "Lock of type[REPLACE] for interval[2011-04-01T00:00:00.000Z/2011-04-03T00:00:00.000Z] was revoked",
         exception.getMessage()
     );
+  }
+
+  @Test
+  public void testConstructorNormalizesCellContext()
+  {
+    final ScanQuery query = new Druids.ScanQueryBuilder()
+        .resultFormat(ScanQuery.ResultFormat.RESULT_FORMAT_COMPACTED_LIST)
+        .intervals(new MultipleIntervalSegmentSpec(INTERVALS))
+        .dataSource("target")
+        .context(
+            ImmutableMap.of(
+                QueryContexts.CTX_CELL, "  us-east-1a ",
+                QueryContexts.CTX_CELL_EXECUTION_MODE, "strict_cell"
+            )
+        )
+        .build();
+
+    final MSQControllerTask controllerTask = createControllerTask(msqSpecBuilder().query(query));
+    Assert.assertEquals("us-east-1a", controllerTask.getQuerySpec().getContext().getString(QueryContexts.CTX_CELL));
+    Assert.assertEquals(
+        QueryContexts.CellExecutionMode.STRICT_CELL.name(),
+        controllerTask.getQuerySpec().getContext().getString(QueryContexts.CTX_CELL_EXECUTION_MODE)
+    );
+    Assert.assertEquals(
+        false,
+        controllerTask.getQuerySpec().getContext().getBoolean(QueryContexts.CTX_ALLOW_REALTIME_EXCEPTION, true)
+    );
+    Assert.assertEquals("us-east-1a", controllerTask.getContextValue(QueryContexts.CTX_CELL));
+    Assert.assertEquals(
+        QueryContexts.CellExecutionMode.STRICT_CELL.name(),
+        controllerTask.getContextValue(QueryContexts.CTX_CELL_EXECUTION_MODE)
+    );
+    Assert.assertEquals(false, controllerTask.getContextValue(QueryContexts.CTX_ALLOW_REALTIME_EXCEPTION));
+  }
+
+  @Test
+  public void testConstructorPropagatesFailoverContextToTaskContext()
+  {
+    final ScanQuery query = new Druids.ScanQueryBuilder()
+        .resultFormat(ScanQuery.ResultFormat.RESULT_FORMAT_COMPACTED_LIST)
+        .intervals(new MultipleIntervalSegmentSpec(INTERVALS))
+        .dataSource("target")
+        .context(
+            ImmutableMap.of(
+                QueryContexts.CTX_CELL, "us-east-1a",
+                QueryContexts.CTX_CELL_EXECUTION_MODE, QueryContexts.CellExecutionMode.CELL_FAILOVER.name(),
+                QueryContexts.CTX_FAILOVER_REASON, "capacity-pressure",
+                QueryContexts.CTX_FAILOVER_TICKET, "INC-1234"
+            )
+        )
+        .build();
+
+    final MSQControllerTask controllerTask = createControllerTask(msqSpecBuilder().query(query));
+    Assert.assertEquals("us-east-1a", controllerTask.getContextValue(QueryContexts.CTX_CELL));
+    Assert.assertEquals(
+        QueryContexts.CellExecutionMode.CELL_FAILOVER.name(),
+        controllerTask.getContextValue(QueryContexts.CTX_CELL_EXECUTION_MODE)
+    );
+    Assert.assertEquals("capacity-pressure", controllerTask.getContextValue(QueryContexts.CTX_FAILOVER_REASON));
+    Assert.assertEquals("INC-1234", controllerTask.getContextValue(QueryContexts.CTX_FAILOVER_TICKET));
+  }
+
+  @Test
+  public void testConstructorNormalizesSqlQueryContext()
+  {
+    final ScanQuery query = new Druids.ScanQueryBuilder()
+        .resultFormat(ScanQuery.ResultFormat.RESULT_FORMAT_COMPACTED_LIST)
+        .intervals(new MultipleIntervalSegmentSpec(INTERVALS))
+        .dataSource("target")
+        .build();
+
+    final MSQControllerTask controllerTask = new MSQControllerTask(
+        "controller_1",
+        msqSpecBuilder().query(query).build(),
+        "select 1",
+        ImmutableMap.of(
+            QueryContexts.CTX_CELL, "  us-east-1a ",
+            QueryContexts.CTX_CELL_EXECUTION_MODE, "strict_cell"
+        ),
+        null,
+        null,
+        null,
+        null
+    );
+
+    final Map<String, Object> taskAsMap = JSON_MAPPER.convertValue(controllerTask, Map.class);
+    final Map<String, Object> serializedSqlContext = (Map<String, Object>) taskAsMap.get("sqlQueryContext");
+    Assert.assertEquals("us-east-1a", serializedSqlContext.get(QueryContexts.CTX_CELL));
+    Assert.assertEquals(
+        QueryContexts.CellExecutionMode.STRICT_CELL.name(),
+        serializedSqlContext.get(QueryContexts.CTX_CELL_EXECUTION_MODE)
+    );
+    Assert.assertEquals(false, serializedSqlContext.get(QueryContexts.CTX_ALLOW_REALTIME_EXCEPTION));
+  }
+
+  @Test
+  public void testConstructorRejectsInvalidCellContext()
+  {
+    final ScanQuery query = new Druids.ScanQueryBuilder()
+        .resultFormat(ScanQuery.ResultFormat.RESULT_FORMAT_COMPACTED_LIST)
+        .intervals(new MultipleIntervalSegmentSpec(INTERVALS))
+        .dataSource("target")
+        .context(ImmutableMap.of(QueryContexts.CTX_CELL_EXECUTION_MODE, "STRICT_CELL"))
+        .build();
+
+    final BadQueryContextException exception = Assert.assertThrows(
+        BadQueryContextException.class,
+        () -> createControllerTask(msqSpecBuilder().query(query))
+    );
+    Assert.assertTrue(exception.getMessage().contains("Expected key [cell] to be a non-empty String"));
   }
 
   private static MSQControllerTask createControllerTask(LegacyMSQSpec.Builder specBuilder)

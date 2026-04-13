@@ -29,7 +29,9 @@ import org.apache.druid.indexing.common.actions.TaskActionClient;
 import org.apache.druid.indexing.common.actions.UpdateStatusAction;
 import org.apache.druid.indexing.common.config.TaskConfig;
 import org.apache.druid.java.util.emitter.service.ServiceMetricEvent;
+import org.apache.druid.query.BadQueryContextException;
 import org.apache.druid.query.DruidMetrics;
+import org.apache.druid.query.QueryContexts;
 import org.apache.druid.server.DruidNode;
 import org.apache.druid.tasklogs.TaskLogPusher;
 import org.junit.Assert;
@@ -43,6 +45,8 @@ import javax.annotation.Nullable;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -302,6 +306,35 @@ public class AbstractTaskTest
   {
     AbstractTask.IngestionMode ingestionMode = AbstractTask.IngestionMode.fromString("NONE");
     Assert.assertEquals(AbstractTask.IngestionMode.NONE, ingestionMode);
+  }
+
+  @Test
+  public void testTaskContextNormalizesCellContext()
+  {
+    final Map<String, Object> context = new HashMap<>();
+    context.put(QueryContexts.CTX_CELL, "  us-east-1a ");
+    context.put(QueryContexts.CTX_CELL_EXECUTION_MODE, "strict_cell");
+
+    final NoopTask task = new NoopTask("myID", null, null, 1, 0, context);
+    Assert.assertEquals("us-east-1a", task.getContextValue(QueryContexts.CTX_CELL));
+    Assert.assertEquals(
+        QueryContexts.CellExecutionMode.STRICT_CELL.name(),
+        task.getContextValue(QueryContexts.CTX_CELL_EXECUTION_MODE)
+    );
+    Assert.assertEquals(false, task.getContextValue(QueryContexts.CTX_ALLOW_REALTIME_EXCEPTION));
+  }
+
+  @Test
+  public void testTaskContextRejectsInvalidCellContext()
+  {
+    final Map<String, Object> context = new HashMap<>();
+    context.put(QueryContexts.CTX_CELL_EXECUTION_MODE, QueryContexts.CellExecutionMode.STRICT_CELL.name());
+
+    final BadQueryContextException exception = Assert.assertThrows(
+        BadQueryContextException.class,
+        () -> new NoopTask("myID", null, null, 1, 0, context)
+    );
+    Assert.assertTrue(exception.getMessage().contains("Expected key [cell] to be a non-empty String"));
   }
 
   @Test

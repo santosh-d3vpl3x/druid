@@ -71,7 +71,9 @@
       "design/segments",
       "design/deep-storage",
       "design/metadata-storage",
-      "design/zookeeper"
+      "design/zookeeper",
+      "design/cell-execution-spec",
+      "design/cell-coverage-routing-rollout"
     ]},
     {"type": "category",
     "label": "Ingestion",
@@ -327,6 +329,7 @@
         ]
       },
       "operations/high-availability",
+      "operations/cell-rollout-gate-checklist",
       "operations/rolling-updates",
       "operations/rule-configuration",
       "operations/migrate-from-firehose",

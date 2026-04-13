@@ -40,6 +40,7 @@ import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.java.util.emitter.service.ServiceEmitter;
 import org.apache.druid.java.util.emitter.service.ServiceMetricEvent;
 import org.apache.druid.query.Query;
+import org.apache.druid.query.QueryContexts;
 import org.apache.druid.query.QueryRunner;
 import org.apache.druid.segment.indexing.BatchIOConfig;
 import org.apache.druid.server.DruidNode;
@@ -127,6 +128,7 @@ public abstract class AbstractTask implements Task
     this.dataSource = Preconditions.checkNotNull(dataSource, "dataSource");
     // Copy the given context into a new mutable map because the Druid indexing service can add some internal contexts.
     this.context = context == null ? new HashMap<>() : new HashMap<>(context);
+    QueryContexts.validateAndNormalizeCellContext(this.context);
     this.ingestionMode = ingestionMode;
   }
 
