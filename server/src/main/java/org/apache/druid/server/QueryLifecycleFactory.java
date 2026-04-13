@@ -51,6 +51,7 @@ public class QueryLifecycleFactory
   private final AuthConfig authConfig;
   private final PolicyEnforcer policyEnforcer;
   private final BrokerViewOfBrokerConfig brokerViewOfBrokerConfig;
+  private final IngressCellResolver ingressCellResolver;
 
   @Inject
   public QueryLifecycleFactory(
@@ -63,6 +64,7 @@ public class QueryLifecycleFactory
       final PolicyEnforcer policyEnforcer,
       final AuthorizerMapper authorizerMapper,
       final QueryConfigProvider queryConfigProvider,
+      final IngressCellResolver ingressCellResolver,
       @Nullable final BrokerViewOfBrokerConfig brokerViewOfBrokerConfig
   )
   {
@@ -73,6 +75,7 @@ public class QueryLifecycleFactory
     this.requestLogger = requestLogger;
     this.authorizerMapper = authorizerMapper;
     this.queryConfigProvider = queryConfigProvider;
+    this.ingressCellResolver = ingressCellResolver;
     this.authConfig = authConfig;
     this.policyEnforcer = policyEnforcer;
     this.brokerViewOfBrokerConfig = brokerViewOfBrokerConfig;
@@ -102,6 +105,7 @@ public class QueryLifecycleFactory
         policyEnforcer,
         queryBlocklist,
         perSegmentTimeoutConfig,
+        ingressCellResolver,
         System.currentTimeMillis(),
         System.nanoTime()
     );

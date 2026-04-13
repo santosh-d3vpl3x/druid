@@ -760,7 +760,19 @@ public class QueryResourceTest
 
     queryResource = new QueryResource(
 
-        new QueryLifecycleFactory(null, null, null, null, null, null, NoopPolicyEnforcer.instance(), null, overrideConfig, null)
+        new QueryLifecycleFactory(
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            NoopPolicyEnforcer.instance(),
+            null,
+            overrideConfig,
+            new IngressCellResolver(),
+            null
+        )
         {
           @Override
           public QueryLifecycle factorize()
@@ -777,6 +789,7 @@ public class QueryResourceTest
                 NoopPolicyEnforcer.instance(),
                 null,
                 Collections.emptyMap(),
+                new IngressCellResolver(),
                 System.currentTimeMillis(),
                 System.nanoTime()
             )

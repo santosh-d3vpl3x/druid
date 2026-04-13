@@ -169,7 +169,7 @@ public class QueryResource implements QueryCountStatsProvider
       }
 
       final QueryLifecycle queryLifecycle = queryLifecycleFactory.factorize();
-      queryLifecycle.initialize(query);
+      queryLifecycle.initialize(query, req);
       final String queryThreadName = queryLifecycle.threadName(currThreadName);
       Thread.currentThread().setName(queryThreadName);
 

@@ -221,7 +221,10 @@ public class ServerManager implements QuerySegmentWalker
         emitter.emit(
             ServiceMetricEvent.builder()
                               .setDimension("cell", String.valueOf(context.get(QueryContexts.CTX_CELL)))
+                              .setDimension("ingressCell", String.valueOf(context.get(QueryContexts.CTX_INGRESS_CELL)))
+                              .setDimension("executionCell", druidServerConfig.getTier())
                               .setDimension("cellExecutionMode", String.valueOf(context.get(QueryContexts.CTX_CELL_EXECUTION_MODE)))
+                              .setDimension("failoverTicket", String.valueOf(context.get(QueryContexts.CTX_FAILOVER_TICKET)))
                               .setDimension("validation", "denied")
                               .setMetric(METRIC_CELL_FAILOVER_DENIED, 1L)
         );
@@ -243,6 +246,7 @@ public class ServerManager implements QuerySegmentWalker
       emitter.emit(
           ServiceMetricEvent.builder()
                             .setDimension("cell", cell)
+                            .setDimension("ingressCell", String.valueOf(context.get(QueryContexts.CTX_INGRESS_CELL)))
                             .setDimension("executionCell", druidServerConfig.getTier())
                             .setDimension("cellExecutionMode", cellExecutionMode.name())
                             .setDimension("crossCell", "true")
@@ -263,10 +267,12 @@ public class ServerManager implements QuerySegmentWalker
       emitter.emit(
           ServiceMetricEvent.builder()
                             .setDimension("cell", cell)
+                            .setDimension("ingressCell", String.valueOf(context.get(QueryContexts.CTX_INGRESS_CELL)))
                             .setDimension("executionCell", druidServerConfig.getTier())
                             .setDimension("cellExecutionMode", cellExecutionMode.name())
                             .setDimension("crossCell", String.valueOf(!druidServerConfig.getTier().equals(cell)))
                             .setDimension("failoverReason", String.valueOf(context.get(QueryContexts.CTX_FAILOVER_REASON)))
+                            .setDimension("failoverTicket", String.valueOf(context.get(QueryContexts.CTX_FAILOVER_TICKET)))
                             .setMetric(METRIC_CELL_FAILOVER_ACCEPTED, 1L)
       );
       return;

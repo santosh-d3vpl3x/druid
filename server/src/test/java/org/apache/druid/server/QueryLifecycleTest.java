@@ -131,6 +131,8 @@ public class QueryLifecycleTest
   @Bind(lazy = true)
   @Nullable
   BrokerViewOfBrokerConfig brokerViewOfBrokerConfig;
+  @Bind(lazy = true)
+  IngressCellResolver ingressCellResolver;
 
   QueryMetrics metrics;
   AuthenticationResult authenticationResult;
@@ -162,6 +164,7 @@ public class QueryLifecycleTest
     authenticationResult = EasyMock.createMock(AuthenticationResult.class);
     authConfig = new AuthConfig();
     policyEnforcer = NoopPolicyEnforcer.instance();
+    ingressCellResolver = new IngressCellResolver();
 
     injector = Guice.createInjector(
         BoundFieldModule.of(this),
@@ -700,6 +703,92 @@ public class QueryLifecycleTest
   }
 
   @Test
+  public void testInitializeDefaultsCellContextFromIngressResolver()
+  {
+    EasyMock.expect(queryConfig.getContext()).andReturn(ImmutableMap.of()).anyTimes();
+    EasyMock.expect(conglomerate.getToolChest(EasyMock.anyObject()))
+            .andReturn(toolChest)
+            .times(1);
+
+    replayAll();
+
+    final HttpServletRequest request = EasyMock.createNiceMock(HttpServletRequest.class);
+    EasyMock.expect(request.getHeader(IngressCellResolver.HEADER_INGRESS_CELL)).andReturn("us-east-1a").once();
+    EasyMock.replay(request);
+
+    final QueryLifecycle lifecycle = createLifecycle();
+    lifecycle.initialize(query, request);
+
+    Assert.assertEquals("us-east-1a", lifecycle.getQuery().getContext().get(QueryContexts.CTX_CELL));
+    Assert.assertEquals("us-east-1a", lifecycle.getQuery().getContext().get(QueryContexts.CTX_INGRESS_CELL));
+    Assert.assertEquals(
+        QueryContexts.CellExecutionMode.STRICT_CELL.name(),
+        lifecycle.getQuery().getContext().get(QueryContexts.CTX_CELL_EXECUTION_MODE)
+    );
+    EasyMock.verify(request);
+  }
+
+  @Test
+  public void testInitializePreservesExplicitCellContextOverride()
+  {
+    EasyMock.expect(queryConfig.getContext()).andReturn(ImmutableMap.of()).anyTimes();
+    EasyMock.expect(conglomerate.getToolChest(EasyMock.anyObject()))
+            .andReturn(toolChest)
+            .times(1);
+
+    replayAll();
+
+    final HttpServletRequest request = EasyMock.createNiceMock(HttpServletRequest.class);
+    EasyMock.expect(request.getHeader(IngressCellResolver.HEADER_INGRESS_CELL)).andReturn("us-east-1a").once();
+    EasyMock.replay(request);
+
+    final TimeseriesQuery queryWithCell = Druids.newTimeseriesQueryBuilder()
+                                                .dataSource(DATASOURCE)
+                                                .intervals(ImmutableList.of(Intervals.ETERNITY))
+                                                .aggregators(new CountAggregatorFactory("chocula"))
+                                                .context(
+                                                    ImmutableMap.of(
+                                                        QueryContexts.CTX_CELL,
+                                                        "us-west-2b",
+                                                        QueryContexts.CTX_CELL_EXECUTION_MODE,
+                                                        QueryContexts.CellExecutionMode.CELL_FAILOVER.name(),
+                                                        QueryContexts.CTX_FAILOVER_REASON,
+                                                        "incident",
+                                                        QueryContexts.CTX_FAILOVER_TICKET,
+                                                        "OPS-101"
+                                                    )
+                                                )
+                                                .build();
+
+    final QueryLifecycle lifecycle = createLifecycle();
+    lifecycle.initialize(queryWithCell, request);
+
+    Assert.assertEquals("us-west-2b", lifecycle.getQuery().getContext().get(QueryContexts.CTX_CELL));
+    Assert.assertEquals(
+        QueryContexts.CellExecutionMode.CELL_FAILOVER.name(),
+        lifecycle.getQuery().getContext().get(QueryContexts.CTX_CELL_EXECUTION_MODE)
+    );
+    EasyMock.verify(request);
+  }
+
+  @Test
+  public void testInitializeRejectsInvalidDerivedCellContext()
+  {
+    expectedException.expect(BadQueryContextException.class);
+    expectedException.expectMessage("Expected key [cell] to be a non-empty String");
+
+    EasyMock.expect(queryConfig.getContext()).andReturn(ImmutableMap.of()).anyTimes();
+    replayAll();
+
+    final HttpServletRequest request = EasyMock.createNiceMock(HttpServletRequest.class);
+    EasyMock.expect(request.getHeader(IngressCellResolver.HEADER_INGRESS_CELL)).andReturn("   ").once();
+    EasyMock.replay(request);
+
+    final QueryLifecycle lifecycle = createLifecycle();
+    lifecycle.initialize(query, request);
+  }
+
+  @Test
   public void testAuthorizeQueryContext_securedKeys()
   {
     EasyMock.expect(queryConfig.getContext()).andReturn(ImmutableMap.of()).anyTimes();
@@ -914,6 +1003,7 @@ public class QueryLifecycleTest
         policyEnforcer,
         queryBlocklist,
         Collections.emptyMap(),
+        new IngressCellResolver(),
         System.currentTimeMillis(),
         System.nanoTime()
     );
@@ -966,6 +1056,7 @@ public class QueryLifecycleTest
         policyEnforcer,
         queryBlocklist,
         Collections.emptyMap(),
+        new IngressCellResolver(),
         System.currentTimeMillis(),
         System.nanoTime()
     );
