@@ -95,6 +95,7 @@ public abstract class AbstractStatement implements Closeable
     if (this.queryContext.remove(QueryContexts.BY_SEGMENT_KEY) != null) {
       log.warn("'bySegment' results are not supported for SQL queries, ignoring query context parameter");
     }
+    QueryContexts.validateAndNormalizeCellContext(this.queryContext);
     this.queryContext.putIfAbsent(QueryContexts.CTX_SQL_QUERY_ID, UUID.randomUUID().toString());
   }
 

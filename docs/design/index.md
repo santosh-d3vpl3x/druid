@@ -101,4 +101,6 @@ taking a long time to complete.
 ## Learn more
 - Try the Druid [Quickstart](../tutorials/index.md).
 - Learn more about Druid components in [Design](../design/architecture.md).
+- Review the [Cell Execution Spec (CES)](../design/cell-execution-spec.md) for strict cell-aware execution contracts.
+- Review the [cell coverage and strict routing rollout plan](../design/cell-coverage-routing-rollout.md) for phased adoption guidance.
 - Read about new features and improvements in [Druid Releases](https://github.com/apache/druid/releases).

@@ -105,7 +105,8 @@ public class BrokerQueryResource extends QueryResource
               ev.getBaseTableDataSource(),
               ev.getEffectiveQuerySegmentSpec().getIntervals(),
               numCandidates,
-              cloneQueryMode
+              cloneQueryMode,
+              query
           )
       );
     }

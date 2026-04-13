@@ -133,6 +133,11 @@ public class QueryContexts
 
   // SQL statement resource specific keys
   public static final String CTX_EXECUTION_MODE = "executionMode";
+  public static final String CTX_CELL = "cell";
+  public static final String CTX_CELL_EXECUTION_MODE = "cellExecutionMode";
+  public static final String CTX_ALLOW_REALTIME_EXCEPTION = "allowRealtimeException";
+  public static final String CTX_FAILOVER_REASON = "failoverReason";
+  public static final String CTX_FAILOVER_TICKET = "failoverTicket";
 
   public static final String CTX_NATIVE_QUERY_SQL_PLANNING_MODE = "plannerStrategy";
   public static final String NATIVE_QUERY_SQL_PLANNING_MODE_COUPLED = "COUPLED";
@@ -177,6 +182,7 @@ public class QueryContexts
   public static final boolean DEFAULT_USE_NESTED_FOR_UNKNOWN_TYPE_IN_SUBQUERY = false;
   public static final boolean DEFAULT_EXTENDED_FILTERED_SUM_REWRITE_ENABLED = true;
   public static final boolean DEFAULT_CTX_FULL_REPORT = false;
+  public static final CellExecutionMode DEFAULT_CELL_EXECUTION_MODE = CellExecutionMode.STRICT_CELL;
 
 
   @SuppressWarnings("unused") // Used by Jackson serialization
@@ -222,6 +228,12 @@ public class QueryContexts
     {
       return StringUtils.toLowerCase(name()).replace('_', '-');
     }
+  }
+
+  public enum CellExecutionMode
+  {
+    STRICT_CELL,
+    CELL_FAILOVER
   }
 
   private QueryContexts()
@@ -570,6 +582,54 @@ public class QueryContexts
   {
     for (Entry<String, Object> entry : defaults.entrySet()) {
       context.putIfAbsent(entry.getKey(), entry.getValue());
+    }
+  }
+
+  /**
+   * Validates and normalizes cell-aware execution context values.
+   * <p>
+   * This method is intentionally no-op for contexts that do not include any cell-aware keys, so existing callers can
+   * adopt it without changing behavior.
+   */
+  public static void validateAndNormalizeCellContext(final Map<String, Object> context)
+  {
+    final boolean hasCellAwareKey = context.containsKey(CTX_CELL)
+                                    || context.containsKey(CTX_CELL_EXECUTION_MODE)
+                                    || context.containsKey(CTX_ALLOW_REALTIME_EXCEPTION)
+                                    || context.containsKey(CTX_FAILOVER_REASON)
+                                    || context.containsKey(CTX_FAILOVER_TICKET);
+    if (!hasCellAwareKey) {
+      return;
+    }
+
+    final String cell = parseString(context, CTX_CELL);
+    if (cell == null || cell.trim().isEmpty()) {
+      throw badValueException(CTX_CELL, "a non-empty String", cell);
+    }
+    context.put(CTX_CELL, cell.trim());
+
+    final CellExecutionMode cellExecutionMode = getAsEnum(
+        CTX_CELL_EXECUTION_MODE,
+        context.getOrDefault(CTX_CELL_EXECUTION_MODE, DEFAULT_CELL_EXECUTION_MODE.name()),
+        CellExecutionMode.class
+    );
+    context.put(CTX_CELL_EXECUTION_MODE, cellExecutionMode.name());
+
+    final boolean allowRealtimeException = parseBoolean(context, CTX_ALLOW_REALTIME_EXCEPTION, false);
+    context.put(CTX_ALLOW_REALTIME_EXCEPTION, allowRealtimeException);
+
+    if (CellExecutionMode.CELL_FAILOVER.equals(cellExecutionMode)) {
+      final String failoverReason = parseString(context, CTX_FAILOVER_REASON);
+      if (failoverReason == null || failoverReason.trim().isEmpty()) {
+        throw badValueException(CTX_FAILOVER_REASON, "a non-empty String when cellExecutionMode=CELL_FAILOVER", failoverReason);
+      }
+      context.put(CTX_FAILOVER_REASON, failoverReason.trim());
+
+      final String failoverTicket = parseString(context, CTX_FAILOVER_TICKET);
+      if (failoverTicket == null || failoverTicket.trim().isEmpty()) {
+        throw badValueException(CTX_FAILOVER_TICKET, "a non-empty String when cellExecutionMode=CELL_FAILOVER", failoverTicket);
+      }
+      context.put(CTX_FAILOVER_TICKET, failoverTicket.trim());
     }
   }
 }

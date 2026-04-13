@@ -25,6 +25,7 @@ import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.inject.Inject;
+import org.apache.druid.client.DruidServerConfig;
 import org.apache.druid.client.CachingQueryRunner;
 import org.apache.druid.client.cache.Cache;
 import org.apache.druid.client.cache.CacheConfig;
@@ -38,6 +39,7 @@ import org.apache.druid.java.util.common.guava.Sequences;
 import org.apache.druid.java.util.common.io.Closer;
 import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.java.util.emitter.service.ServiceEmitter;
+import org.apache.druid.java.util.emitter.service.ServiceMetricEvent;
 import org.apache.druid.query.BySegmentQueryRunner;
 import org.apache.druid.query.CPUTimeMetricQueryRunner;
 import org.apache.druid.query.DataSegmentAndDescriptor;
@@ -49,6 +51,7 @@ import org.apache.druid.query.NoopQueryRunner;
 import org.apache.druid.query.PerSegmentOptimizingQueryRunner;
 import org.apache.druid.query.PerSegmentQueryOptimizationContext;
 import org.apache.druid.query.Query;
+import org.apache.druid.query.QueryContexts;
 import org.apache.druid.query.QueryDataSource;
 import org.apache.druid.query.QueryMetrics;
 import org.apache.druid.query.QueryPlus;
@@ -84,7 +87,9 @@ import org.joda.time.Interval;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -98,6 +103,9 @@ import java.util.concurrent.atomic.AtomicLong;
 public class ServerManager implements QuerySegmentWalker
 {
   private static final EmittingLogger log = new EmittingLogger(ServerManager.class);
+  private static final String METRIC_CELL_STRICT_REJECT = "query/cell/strictReject";
+  private static final String METRIC_CELL_FAILOVER_ACCEPTED = "query/cell/failoverAccepted";
+  private static final String METRIC_CELL_FAILOVER_DENIED = "query/cell/failoverDenied";
   private final QueryRunnerFactoryConglomerate conglomerate;
   private final ServiceEmitter emitter;
   private final QueryProcessingPool queryProcessingPool;
@@ -107,6 +115,7 @@ public class ServerManager implements QuerySegmentWalker
   private final CacheConfig cacheConfig;
   protected final SegmentManager segmentManager;
   private final ServerConfig serverConfig;
+  private final DruidServerConfig druidServerConfig;
   private final PolicyEnforcer policyEnforcer;
 
   @Inject
@@ -120,6 +129,7 @@ public class ServerManager implements QuerySegmentWalker
       CacheConfig cacheConfig,
       SegmentManager segmentManager,
       ServerConfig serverConfig,
+      DruidServerConfig druidServerConfig,
       PolicyEnforcer policyEnforcer
   )
   {
@@ -134,6 +144,7 @@ public class ServerManager implements QuerySegmentWalker
     this.cacheConfig = cacheConfig;
     this.segmentManager = segmentManager;
     this.serverConfig = serverConfig;
+    this.druidServerConfig = druidServerConfig;
     this.policyEnforcer = policyEnforcer;
   }
 
@@ -181,6 +192,7 @@ public class ServerManager implements QuerySegmentWalker
   @Override
   public <T> QueryRunner<T> getQueryRunnerForSegments(Query<T> query, Iterable<SegmentDescriptor> specs)
   {
+    validateCellContextForThisServer(query);
     final ExecutionVertex ev = ExecutionVertex.of(query);
     final Optional<VersionedIntervalTimeline<String, DataSegment>> maybeTimeline =
         segmentManager.getTimeline(ev.getBaseTableDataSource());
@@ -196,6 +208,69 @@ public class ServerManager implements QuerySegmentWalker
     final VersionedIntervalTimeline<String, DataSegment> timeline = maybeTimeline.get();
 
     return new ResourceManagingQueryRunner<>(timeline, factory, toolChest, ev, specs);
+  }
+
+  private <T> void validateCellContextForThisServer(final Query<T> query)
+  {
+    final Map<String, Object> context = new HashMap<>(query.getContext());
+    try {
+      QueryContexts.validateAndNormalizeCellContext(context);
+    }
+    catch (RuntimeException e) {
+      if (context.containsKey(QueryContexts.CTX_CELL) || context.containsKey(QueryContexts.CTX_CELL_EXECUTION_MODE)) {
+        emitter.emit(
+            ServiceMetricEvent.builder()
+                              .setDimension("cell", String.valueOf(context.get(QueryContexts.CTX_CELL)))
+                              .setDimension("cellExecutionMode", String.valueOf(context.get(QueryContexts.CTX_CELL_EXECUTION_MODE)))
+                              .setDimension("validation", "denied")
+                              .setMetric(METRIC_CELL_FAILOVER_DENIED, 1L)
+        );
+      }
+      throw e;
+    }
+    final QueryContexts.CellExecutionMode cellExecutionMode = QueryContexts.getAsEnum(
+        QueryContexts.CTX_CELL_EXECUTION_MODE,
+        context.get(QueryContexts.CTX_CELL_EXECUTION_MODE),
+        QueryContexts.CellExecutionMode.class,
+        QueryContexts.DEFAULT_CELL_EXECUTION_MODE
+    );
+    final String cell = QueryContexts.parseString(context, QueryContexts.CTX_CELL);
+    if (
+        QueryContexts.CellExecutionMode.STRICT_CELL.equals(cellExecutionMode)
+        && cell != null
+        && !druidServerConfig.getTier().equals(cell)
+    ) {
+      emitter.emit(
+          ServiceMetricEvent.builder()
+                            .setDimension("cell", cell)
+                            .setDimension("executionCell", druidServerConfig.getTier())
+                            .setDimension("cellExecutionMode", cellExecutionMode.name())
+                            .setDimension("crossCell", "true")
+                            .setMetric(METRIC_CELL_STRICT_REJECT, 1L)
+      );
+      throw DruidException.forPersona(DruidException.Persona.USER)
+                          .ofCategory(DruidException.Category.INVALID_INPUT)
+                          .build(
+                              "Query context [%s=%s] requires strict routing to tier [%s], but this historical is tier [%s].",
+                              QueryContexts.CTX_CELL,
+                              cell,
+                              cell,
+                              druidServerConfig.getTier()
+                          );
+    }
+
+    if (QueryContexts.CellExecutionMode.CELL_FAILOVER.equals(cellExecutionMode)) {
+      emitter.emit(
+          ServiceMetricEvent.builder()
+                            .setDimension("cell", cell)
+                            .setDimension("executionCell", druidServerConfig.getTier())
+                            .setDimension("cellExecutionMode", cellExecutionMode.name())
+                            .setDimension("crossCell", String.valueOf(!druidServerConfig.getTier().equals(cell)))
+                            .setDimension("failoverReason", String.valueOf(context.get(QueryContexts.CTX_FAILOVER_REASON)))
+                            .setMetric(METRIC_CELL_FAILOVER_ACCEPTED, 1L)
+      );
+      return;
+    }
   }
 
   /**
