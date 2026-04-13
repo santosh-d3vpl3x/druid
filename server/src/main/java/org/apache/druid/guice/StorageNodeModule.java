@@ -87,6 +87,7 @@ public class StorageNodeModule implements Module
         config.getStorageSize(),
         serverTypeConfig.getServerType(),
         config.getTier(),
+        config.getCell(),
         config.getPriority()
     );
   }
@@ -114,6 +115,7 @@ public class StorageNodeModule implements Module
 
     return new DataNodeService(
         config.getTier(),
+        config.getCell(),
         config.getMaxSize(),
         config.getStorageSize(),
         serverTypeConfig.getServerType(),

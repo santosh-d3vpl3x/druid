@@ -17,56 +17,62 @@
  * under the License.
  */
 
-package org.apache.druid.discovery;
+package org.apache.druid.server.coordination;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.druid.segment.TestHelper;
-import org.apache.druid.server.coordination.ServerType;
 import org.junit.Assert;
 import org.junit.Test;
 
-/**
- */
-public class DataNodeServiceTest
+public class DruidServerMetadataTest
 {
   private final ObjectMapper mapper = TestHelper.makeJsonMapper();
 
   @Test
-  public void testSerde() throws Exception
+  public void testSerdeWithCell() throws Exception
   {
-    DruidService expected = new DataNodeService(
-        "tier",
-        100,
+    final DruidServerMetadata expected = new DruidServerMetadata(
+        "name",
+        "host:8080",
+        null,
+        100L,
         50L,
         ServerType.HISTORICAL,
+        "tier-a",
+        "cell-a",
         1
     );
 
-    DruidService actual = mapper.readValue(
+    final DruidServerMetadata actual = mapper.readValue(
         mapper.writeValueAsString(expected),
-        DruidService.class
+        DruidServerMetadata.class
     );
 
     Assert.assertEquals(expected, actual);
+    Assert.assertEquals("cell-a", actual.getCell());
+    Assert.assertEquals("cell-a", actual.getRoutingCell());
   }
 
   @Test
-  public void testSerdeWithCell() throws Exception
+  public void testRoutingCellFallsBackToTier() throws Exception
   {
-    DruidService expected = new DataNodeService(
-        "tier",
-        "cell-a",
-        100,
+    final DruidServerMetadata expected = new DruidServerMetadata(
+        "name",
+        "host:8080",
+        null,
+        100L,
         50L,
         ServerType.HISTORICAL,
+        "tier-a",
         1
     );
 
-    DruidService actual = mapper.readValue(
+    final DruidServerMetadata actual = mapper.readValue(
         mapper.writeValueAsString(expected),
-        DruidService.class
+        DruidServerMetadata.class
     );
 
-    Assert.assertEquals(expected, actual);
+    Assert.assertNull(actual.getCell());
+    Assert.assertEquals("tier-a", actual.getRoutingCell());
   }
 }
