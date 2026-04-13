@@ -93,6 +93,9 @@ public class QueryLifecycle
 {
   private static final Logger log = new Logger(QueryLifecycle.class);
   private static final IngressIdentityCellResolver INGRESS_IDENTITY_CELL_RESOLVER = new IngressIdentityCellResolver();
+  private static final String CELL_CONTEXT_KEY = "cell";
+  private static final String CELL_EXECUTION_MODE_CONTEXT_KEY = "cellExecutionMode";
+  private static final String STRICT_CELL_EXECUTION_MODE = "STRICT_CELL";
 
   private final QueryRunnerFactoryConglomerate conglomerate;
   private final QuerySegmentWalker texasRanger;
@@ -226,14 +229,11 @@ public class QueryLifecycle
     Map<String, Object> contextWithDefaults = new HashMap<>(queryConfigProvider.getContext());
     applyPerDatasourcePerSegmentTimeout(baseQuery, contextWithDefaults, queryId);
     Map<String, Object> finalContext = QueryContexts.override(contextWithDefaults, baseQuery.getContext());
-    if (!finalContext.containsKey(QueryContexts.CTX_CELL)) {
-      finalContext.put(QueryContexts.CTX_CELL, INGRESS_IDENTITY_CELL_RESOLVER.resolve(finalContext));
+    if (!finalContext.containsKey(CELL_CONTEXT_KEY)) {
+      finalContext.put(CELL_CONTEXT_KEY, INGRESS_IDENTITY_CELL_RESOLVER.resolve(finalContext));
     }
-    if (!finalContext.containsKey(QueryContexts.CTX_CELL_EXECUTION_MODE)) {
-      finalContext.put(
-          QueryContexts.CTX_CELL_EXECUTION_MODE,
-          QueryContexts.CellExecutionMode.STRICT_CELL.toString()
-      );
+    if (!finalContext.containsKey(CELL_EXECUTION_MODE_CONTEXT_KEY)) {
+      finalContext.put(CELL_EXECUTION_MODE_CONTEXT_KEY, STRICT_CELL_EXECUTION_MODE);
     }
     QueryContexts.validateAndNormalizeCellContext(finalContext);
     finalContext.put(BaseQuery.QUERY_ID, queryId);

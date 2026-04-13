@@ -42,7 +42,6 @@ import org.apache.druid.query.GenericQueryMetricsFactory;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.QueryConfigProvider;
 import org.apache.druid.query.QueryContextTest;
-import org.apache.druid.query.QueryContexts;
 import org.apache.druid.query.QueryMetrics;
 import org.apache.druid.query.QueryRunner;
 import org.apache.druid.query.QueryRunnerFactoryConglomerate;
@@ -94,6 +93,9 @@ public class QueryLifecycleTest
   private static final String DATASOURCE = "some_datasource";
   private static final String IDENTITY = "some_identity";
   private static final String AUTHORIZER = "some_authorizer";
+  private static final String CELL_CONTEXT_KEY = "cell";
+  private static final String CELL_EXECUTION_MODE_CONTEXT_KEY = "cellExecutionMode";
+  private static final String STRICT_CELL_EXECUTION_MODE = "STRICT_CELL";
 
   private static final Resource RESOURCE = new Resource(DATASOURCE, ResourceType.DATASOURCE);
 
@@ -546,8 +548,8 @@ public class QueryLifecycleTest
     final Map<String, Object> revisedContext = new HashMap<>(lifecycle.getQuery().getContext());
     Assert.assertTrue(lifecycle.getQuery().getContext().containsKey("queryId"));
     revisedContext.remove("queryId");
-    revisedContext.remove(QueryContexts.CTX_CELL);
-    revisedContext.remove(QueryContexts.CTX_CELL_EXECUTION_MODE);
+    revisedContext.remove(CELL_CONTEXT_KEY);
+    revisedContext.remove(CELL_EXECUTION_MODE_CONTEXT_KEY);
     Assert.assertEquals(
         userContext,
         revisedContext
@@ -638,8 +640,8 @@ public class QueryLifecycleTest
     final Map<String, Object> revisedContext = new HashMap<>(lifecycle.getQuery().getContext());
     Assert.assertTrue(lifecycle.getQuery().getContext().containsKey("queryId"));
     revisedContext.remove("queryId");
-    revisedContext.remove(QueryContexts.CTX_CELL);
-    revisedContext.remove(QueryContexts.CTX_CELL_EXECUTION_MODE);
+    revisedContext.remove(CELL_CONTEXT_KEY);
+    revisedContext.remove(CELL_EXECUTION_MODE_CONTEXT_KEY);
     Assert.assertEquals(
         userContext,
         revisedContext
@@ -691,8 +693,8 @@ public class QueryLifecycleTest
     final Map<String, Object> revisedContext = new HashMap<>(lifecycle.getQuery().getContext());
     Assert.assertTrue(lifecycle.getQuery().getContext().containsKey("queryId"));
     revisedContext.remove("queryId");
-    revisedContext.remove(QueryContexts.CTX_CELL);
-    revisedContext.remove(QueryContexts.CTX_CELL_EXECUTION_MODE);
+    revisedContext.remove(CELL_CONTEXT_KEY);
+    revisedContext.remove(CELL_EXECUTION_MODE_CONTEXT_KEY);
     Assert.assertEquals(
         userContext,
         revisedContext
@@ -828,10 +830,10 @@ public class QueryLifecycleTest
     final QueryLifecycle lifecycle = createLifecycle();
     lifecycle.initialize(query);
 
-    Assert.assertEquals("broker_cell_a", lifecycle.getQuery().context().getString(QueryContexts.CTX_CELL));
+    Assert.assertEquals("broker_cell_a", lifecycle.getQuery().context().getString(CELL_CONTEXT_KEY));
     Assert.assertEquals(
-        QueryContexts.CellExecutionMode.STRICT_CELL.toString(),
-        lifecycle.getQuery().context().getString(QueryContexts.CTX_CELL_EXECUTION_MODE)
+        STRICT_CELL_EXECUTION_MODE,
+        lifecycle.getQuery().context().getString(CELL_EXECUTION_MODE_CONTEXT_KEY)
     );
   }
 
@@ -852,10 +854,10 @@ public class QueryLifecycleTest
                                                        .aggregators(new CountAggregatorFactory("chocula"))
                                                        .context(
                                                            ImmutableMap.of(
-                                                               QueryContexts.CTX_CELL,
+                                                               CELL_CONTEXT_KEY,
                                                                "user_cell",
-                                                               QueryContexts.CTX_CELL_EXECUTION_MODE,
-                                                               QueryContexts.CellExecutionMode.STRICT_CELL.toString()
+                                                               CELL_EXECUTION_MODE_CONTEXT_KEY,
+                                                               STRICT_CELL_EXECUTION_MODE
                                                            )
                                                        )
                                                        .build();
@@ -863,10 +865,10 @@ public class QueryLifecycleTest
     final QueryLifecycle lifecycle = createLifecycle();
     lifecycle.initialize(queryWithCellContext);
 
-    Assert.assertEquals("user_cell", lifecycle.getQuery().context().getString(QueryContexts.CTX_CELL));
+    Assert.assertEquals("user_cell", lifecycle.getQuery().context().getString(CELL_CONTEXT_KEY));
     Assert.assertEquals(
-        QueryContexts.CellExecutionMode.STRICT_CELL.toString(),
-        lifecycle.getQuery().context().getString(QueryContexts.CTX_CELL_EXECUTION_MODE)
+        STRICT_CELL_EXECUTION_MODE,
+        lifecycle.getQuery().context().getString(CELL_EXECUTION_MODE_CONTEXT_KEY)
     );
   }
 

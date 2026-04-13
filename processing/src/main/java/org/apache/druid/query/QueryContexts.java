@@ -145,8 +145,6 @@ public class QueryContexts
 
   public static final String CTX_PREPLANNED = "prePlanned";
   public static final boolean DEFAULT_PREPLANNED = true;
-  public static final String CTX_CELL = "cell";
-  public static final String CTX_CELL_EXECUTION_MODE = "cellExecutionMode";
 
   // Defaults
   public static final boolean DEFAULT_BY_SEGMENT = false;
@@ -229,24 +227,6 @@ public class QueryContexts
     }
   }
 
-  public enum CellExecutionMode
-  {
-    STRICT_CELL;
-
-    @JsonCreator
-    public static CellExecutionMode fromString(final String str)
-    {
-      return CellExecutionMode.valueOf(StringUtils.toUpperCase(str));
-    }
-
-    @Override
-    @JsonValue
-    public String toString()
-    {
-      return name();
-    }
-  }
-
   private QueryContexts()
   {
   }
@@ -279,8 +259,8 @@ public class QueryContexts
 
   public static void validateAndNormalizeCellContext(final Map<String, Object> context)
   {
-    final Object cellValue = context.get(CTX_CELL);
-    final Object cellExecutionModeValue = context.get(CTX_CELL_EXECUTION_MODE);
+    final Object cellValue = context.get("cell");
+    final Object cellExecutionModeValue = context.get("cellExecutionMode");
 
     if (cellValue == null && cellExecutionModeValue == null) {
       return;
@@ -288,34 +268,32 @@ public class QueryContexts
     if (cellValue == null || cellExecutionModeValue == null) {
       throw new IAE(
           "Query context must provide both [%s] and [%s], or neither.",
-          CTX_CELL,
-          CTX_CELL_EXECUTION_MODE
+          "cell",
+          "cellExecutionMode"
       );
     }
 
-    final String cell = getAsString(CTX_CELL, cellValue, null);
+    final String cell = getAsString("cell", cellValue, null);
     if (Strings.isNullOrEmpty(cell) || !CELL_PATTERN.matcher(cell).matches()) {
       throw new IAE(
           "Query context parameter [%s] must match [%s], but was [%s].",
-          CTX_CELL,
+          "cell",
           CELL_PATTERN.pattern(),
           cell
       );
     }
-    context.put(CTX_CELL, StringUtils.toLowerCase(cell));
+    context.put("cell", StringUtils.toLowerCase(cell));
 
-    final String executionModeString = getAsString(CTX_CELL_EXECUTION_MODE, cellExecutionModeValue, null);
-    try {
-      context.put(CTX_CELL_EXECUTION_MODE, CellExecutionMode.fromString(executionModeString).toString());
-    }
-    catch (IllegalArgumentException e) {
+    final String executionModeString = getAsString("cellExecutionMode", cellExecutionModeValue, null);
+    if (!"STRICT_CELL".equals(StringUtils.toUpperCase(executionModeString))) {
       throw new IAE(
           "Query context parameter [%s] must be one of [%s], but was [%s].",
-          CTX_CELL_EXECUTION_MODE,
-          Arrays.stream(CellExecutionMode.values()).map(CellExecutionMode::toString).collect(Collectors.joining(",")),
+          "cellExecutionMode",
+          "STRICT_CELL",
           executionModeString
       );
     }
+    context.put("cellExecutionMode", "STRICT_CELL");
   }
 
   @SuppressWarnings("unused") // To keep IntelliJ inspections happy
