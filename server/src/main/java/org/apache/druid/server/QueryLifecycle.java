@@ -92,6 +92,7 @@ import java.util.concurrent.TimeUnit;
 public class QueryLifecycle
 {
   private static final Logger log = new Logger(QueryLifecycle.class);
+  private static final IngressIdentityCellResolver INGRESS_IDENTITY_CELL_RESOLVER = new IngressIdentityCellResolver();
 
   private final QueryRunnerFactoryConglomerate conglomerate;
   private final QuerySegmentWalker texasRanger;
@@ -225,6 +226,16 @@ public class QueryLifecycle
     Map<String, Object> contextWithDefaults = new HashMap<>(queryConfigProvider.getContext());
     applyPerDatasourcePerSegmentTimeout(baseQuery, contextWithDefaults, queryId);
     Map<String, Object> finalContext = QueryContexts.override(contextWithDefaults, baseQuery.getContext());
+    if (!finalContext.containsKey(QueryContexts.CTX_CELL)) {
+      finalContext.put(QueryContexts.CTX_CELL, INGRESS_IDENTITY_CELL_RESOLVER.resolve(finalContext));
+    }
+    if (!finalContext.containsKey(QueryContexts.CTX_CELL_EXECUTION_MODE)) {
+      finalContext.put(
+          QueryContexts.CTX_CELL_EXECUTION_MODE,
+          QueryContexts.CellExecutionMode.STRICT_CELL.toString()
+      );
+    }
+    QueryContexts.validateAndNormalizeCellContext(finalContext);
     finalContext.put(BaseQuery.QUERY_ID, queryId);
 
     this.baseQuery = baseQuery.withOverriddenContext(finalContext);

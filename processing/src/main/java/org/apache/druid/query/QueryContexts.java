@@ -21,6 +21,7 @@ package org.apache.druid.query;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
+import com.google.common.base.Strings;
 import org.apache.druid.guice.annotations.PublicApi;
 import org.apache.druid.java.util.common.HumanReadableBytes;
 import org.apache.druid.java.util.common.IAE;
@@ -35,6 +36,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @PublicApi
@@ -143,6 +145,8 @@ public class QueryContexts
 
   public static final String CTX_PREPLANNED = "prePlanned";
   public static final boolean DEFAULT_PREPLANNED = true;
+  public static final String CTX_CELL = "cell";
+  public static final String CTX_CELL_EXECUTION_MODE = "cellExecutionMode";
 
   // Defaults
   public static final boolean DEFAULT_BY_SEGMENT = false;
@@ -177,6 +181,7 @@ public class QueryContexts
   public static final boolean DEFAULT_USE_NESTED_FOR_UNKNOWN_TYPE_IN_SUBQUERY = false;
   public static final boolean DEFAULT_EXTENDED_FILTERED_SUM_REWRITE_ENABLED = true;
   public static final boolean DEFAULT_CTX_FULL_REPORT = false;
+  private static final Pattern CELL_PATTERN = Pattern.compile("[a-z0-9][a-z0-9_-]*");
 
 
   @SuppressWarnings("unused") // Used by Jackson serialization
@@ -224,6 +229,24 @@ public class QueryContexts
     }
   }
 
+  public enum CellExecutionMode
+  {
+    STRICT_CELL;
+
+    @JsonCreator
+    public static CellExecutionMode fromString(final String str)
+    {
+      return CellExecutionMode.valueOf(StringUtils.toUpperCase(str));
+    }
+
+    @Override
+    @JsonValue
+    public String toString()
+    {
+      return name();
+    }
+  }
+
   private QueryContexts()
   {
   }
@@ -252,6 +275,47 @@ public class QueryContexts
   public static String parseString(Map<String, Object> context, String key, String defaultValue)
   {
     return getAsString(key, context.get(key), defaultValue);
+  }
+
+  public static void validateAndNormalizeCellContext(final Map<String, Object> context)
+  {
+    final Object cellValue = context.get(CTX_CELL);
+    final Object cellExecutionModeValue = context.get(CTX_CELL_EXECUTION_MODE);
+
+    if (cellValue == null && cellExecutionModeValue == null) {
+      return;
+    }
+    if (cellValue == null || cellExecutionModeValue == null) {
+      throw new IAE(
+          "Query context must provide both [%s] and [%s], or neither.",
+          CTX_CELL,
+          CTX_CELL_EXECUTION_MODE
+      );
+    }
+
+    final String cell = getAsString(CTX_CELL, cellValue, null);
+    if (Strings.isNullOrEmpty(cell) || !CELL_PATTERN.matcher(cell).matches()) {
+      throw new IAE(
+          "Query context parameter [%s] must match [%s], but was [%s].",
+          CTX_CELL,
+          CELL_PATTERN.pattern(),
+          cell
+      );
+    }
+    context.put(CTX_CELL, StringUtils.toLowerCase(cell));
+
+    final String executionModeString = getAsString(CTX_CELL_EXECUTION_MODE, cellExecutionModeValue, null);
+    try {
+      context.put(CTX_CELL_EXECUTION_MODE, CellExecutionMode.fromString(executionModeString).toString());
+    }
+    catch (IllegalArgumentException e) {
+      throw new IAE(
+          "Query context parameter [%s] must be one of [%s], but was [%s].",
+          CTX_CELL_EXECUTION_MODE,
+          Arrays.stream(CellExecutionMode.values()).map(CellExecutionMode::toString).collect(Collectors.joining(",")),
+          executionModeString
+      );
+    }
   }
 
   @SuppressWarnings("unused") // To keep IntelliJ inspections happy

@@ -31,6 +31,7 @@ import com.google.inject.testing.fieldbinder.BoundFieldModule;
 import org.apache.druid.client.BrokerViewOfBrokerConfig;
 import org.apache.druid.error.DruidException;
 import org.apache.druid.guice.LazySingleton;
+import org.apache.druid.java.util.common.IAE;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.Intervals;
 import org.apache.druid.java.util.common.guava.Sequences;
@@ -41,6 +42,7 @@ import org.apache.druid.query.GenericQueryMetricsFactory;
 import org.apache.druid.query.Query;
 import org.apache.druid.query.QueryConfigProvider;
 import org.apache.druid.query.QueryContextTest;
+import org.apache.druid.query.QueryContexts;
 import org.apache.druid.query.QueryMetrics;
 import org.apache.druid.query.QueryRunner;
 import org.apache.druid.query.QueryRunnerFactoryConglomerate;
@@ -544,6 +546,8 @@ public class QueryLifecycleTest
     final Map<String, Object> revisedContext = new HashMap<>(lifecycle.getQuery().getContext());
     Assert.assertTrue(lifecycle.getQuery().getContext().containsKey("queryId"));
     revisedContext.remove("queryId");
+    revisedContext.remove(QueryContexts.CTX_CELL);
+    revisedContext.remove(QueryContexts.CTX_CELL_EXECUTION_MODE);
     Assert.assertEquals(
         userContext,
         revisedContext
@@ -634,6 +638,8 @@ public class QueryLifecycleTest
     final Map<String, Object> revisedContext = new HashMap<>(lifecycle.getQuery().getContext());
     Assert.assertTrue(lifecycle.getQuery().getContext().containsKey("queryId"));
     revisedContext.remove("queryId");
+    revisedContext.remove(QueryContexts.CTX_CELL);
+    revisedContext.remove(QueryContexts.CTX_CELL_EXECUTION_MODE);
     Assert.assertEquals(
         userContext,
         revisedContext
@@ -685,6 +691,8 @@ public class QueryLifecycleTest
     final Map<String, Object> revisedContext = new HashMap<>(lifecycle.getQuery().getContext());
     Assert.assertTrue(lifecycle.getQuery().getContext().containsKey("queryId"));
     revisedContext.remove("queryId");
+    revisedContext.remove(QueryContexts.CTX_CELL);
+    revisedContext.remove(QueryContexts.CTX_CELL_EXECUTION_MODE);
     Assert.assertEquals(
         userContext,
         revisedContext
@@ -804,6 +812,74 @@ public class QueryLifecycleTest
     lifecycle = createLifecycle();
     lifecycle.initialize(query);
     Assert.assertTrue(lifecycle.authorize(mockRequest()).allowBasicAccess());
+  }
+
+  @Test
+  public void testInitializeDefaultsCellContextWhenMissing()
+  {
+    EasyMock.expect(queryConfig.getContext())
+            .andReturn(ImmutableMap.of(IngressIdentityCellResolver.INGRESS_HOST_KEY, "broker_cell_a"))
+            .anyTimes();
+    EasyMock.expect(conglomerate.getToolChest(EasyMock.anyObject()))
+            .andReturn(toolChest)
+            .once();
+    replayAll();
+
+    final QueryLifecycle lifecycle = createLifecycle();
+    lifecycle.initialize(query);
+
+    Assert.assertEquals("broker_cell_a", lifecycle.getQuery().context().getString(QueryContexts.CTX_CELL));
+    Assert.assertEquals(
+        QueryContexts.CellExecutionMode.STRICT_CELL.toString(),
+        lifecycle.getQuery().context().getString(QueryContexts.CTX_CELL_EXECUTION_MODE)
+    );
+  }
+
+  @Test
+  public void testInitializePreservesUserProvidedCellContext()
+  {
+    EasyMock.expect(queryConfig.getContext())
+            .andReturn(ImmutableMap.of(IngressIdentityCellResolver.INGRESS_HOST_KEY, "broker_cell_a"))
+            .anyTimes();
+    EasyMock.expect(conglomerate.getToolChest(EasyMock.anyObject()))
+            .andReturn(toolChest)
+            .once();
+    replayAll();
+
+    final TimeseriesQuery queryWithCellContext = Druids.newTimeseriesQueryBuilder()
+                                                       .dataSource(DATASOURCE)
+                                                       .intervals(ImmutableList.of(Intervals.ETERNITY))
+                                                       .aggregators(new CountAggregatorFactory("chocula"))
+                                                       .context(
+                                                           ImmutableMap.of(
+                                                               QueryContexts.CTX_CELL,
+                                                               "user_cell",
+                                                               QueryContexts.CTX_CELL_EXECUTION_MODE,
+                                                               QueryContexts.CellExecutionMode.STRICT_CELL.toString()
+                                                           )
+                                                       )
+                                                       .build();
+
+    final QueryLifecycle lifecycle = createLifecycle();
+    lifecycle.initialize(queryWithCellContext);
+
+    Assert.assertEquals("user_cell", lifecycle.getQuery().context().getString(QueryContexts.CTX_CELL));
+    Assert.assertEquals(
+        QueryContexts.CellExecutionMode.STRICT_CELL.toString(),
+        lifecycle.getQuery().context().getString(QueryContexts.CTX_CELL_EXECUTION_MODE)
+    );
+  }
+
+  @Test
+  public void testInitializeFailsForInvalidDerivedCellContext()
+  {
+    EasyMock.expect(queryConfig.getContext())
+            .andReturn(ImmutableMap.of(IngressIdentityCellResolver.INGRESS_HOST_KEY, "invalid.cell"))
+            .anyTimes();
+    replayAll();
+
+    final QueryLifecycle lifecycle = createLifecycle();
+    Assert.assertThrows(IAE.class, () -> lifecycle.initialize(query));
   }
 
   public static Query<?> queryMatchDataSource(DataSource dataSource)
