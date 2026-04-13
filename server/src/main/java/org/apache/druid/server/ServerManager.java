@@ -74,6 +74,7 @@ import org.apache.druid.segment.loading.AcquireSegmentAction;
 import org.apache.druid.segment.loading.AcquireSegmentResult;
 import org.apache.druid.segment.loading.VirtualPlaceholderSegment;
 import org.apache.druid.server.initialization.ServerConfig;
+import org.apache.druid.server.coordination.DruidServerMetadata;
 import org.apache.druid.timeline.DataSegment;
 import org.apache.druid.timeline.SegmentId;
 import org.apache.druid.timeline.VersionedIntervalTimeline;
@@ -135,6 +136,11 @@ public class ServerManager implements QuerySegmentWalker
     this.segmentManager = segmentManager;
     this.serverConfig = serverConfig;
     this.policyEnforcer = policyEnforcer;
+  }
+
+  public static String getRoutingCell(final DruidServerMetadata metadata)
+  {
+    return metadata.getRoutingCell();
   }
 
   @Override

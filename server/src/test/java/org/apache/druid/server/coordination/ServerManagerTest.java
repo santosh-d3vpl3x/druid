@@ -950,4 +950,33 @@ public class ServerManagerTest
       };
     }
   }
+  @Test
+  public void testRoutingCellUsesExplicitCell()
+  {
+    final DruidServerMetadata metadataWithCell = new DruidServerMetadata(
+        "server",
+        "localhost:8080",
+        null,
+        100L,
+        100L,
+        ServerType.HISTORICAL,
+        "tier-a",
+        "cell-a",
+        1
+    );
+    final DruidServerMetadata metadataWithoutCell = new DruidServerMetadata(
+        "server2",
+        "localhost:8081",
+        null,
+        100L,
+        100L,
+        ServerType.HISTORICAL,
+        "tier-b",
+        1
+    );
+
+    Assert.assertEquals("cell-a", ServerManager.getRoutingCell(metadataWithCell));
+    Assert.assertEquals("tier-b", ServerManager.getRoutingCell(metadataWithoutCell));
+  }
+
 }

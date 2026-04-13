@@ -26,6 +26,7 @@ import org.apache.druid.client.DruidServer;
 import org.apache.druid.client.QueryableDruidServer;
 import org.apache.druid.java.util.common.Intervals;
 import org.apache.druid.server.coordination.ServerType;
+import org.apache.druid.server.coordination.DruidServerMetadata;
 import org.apache.druid.timeline.DataSegment;
 import org.apache.druid.timeline.partition.NoneShardSpec;
 import org.apache.druid.timeline.partition.TombstoneShardSpec;
@@ -166,6 +167,35 @@ public class ServerSelectorTest
         HistoricalFilter.IDENTITY_FILTER
     );
     Assert.assertTrue(selector.hasData());
+  }
+
+  @Test
+  public void testRoutingCellUsesExplicitCell()
+  {
+    final DruidServerMetadata metadataWithCell = new DruidServerMetadata(
+        "server",
+        "localhost:8080",
+        null,
+        100,
+        100L,
+        ServerType.HISTORICAL,
+        "tier-a",
+        "cell-a",
+        1
+    );
+    final DruidServerMetadata metadataWithoutCell = new DruidServerMetadata(
+        "server2",
+        "localhost:8081",
+        null,
+        100,
+        100L,
+        ServerType.HISTORICAL,
+        "tier-b",
+        1
+    );
+
+    Assert.assertEquals("cell-a", ServerSelector.getRoutingCell(metadataWithCell));
+    Assert.assertEquals("tier-b", ServerSelector.getRoutingCell(metadataWithoutCell));
   }
 
 }

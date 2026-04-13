@@ -189,6 +189,11 @@ public class ServerSelector implements Overshadowable<ServerSelector>
     return servers;
   }
 
+  public static String getRoutingCell(final DruidServerMetadata metadata)
+  {
+    return metadata.getRoutingCell();
+  }
+
   @Nullable
   public <T> QueryableDruidServer pick(@Nullable Query<T> query, CloneQueryMode cloneQueryMode)
   {
