@@ -225,6 +225,7 @@ public class QueryLifecycle
     Map<String, Object> contextWithDefaults = new HashMap<>(queryConfigProvider.getContext());
     applyPerDatasourcePerSegmentTimeout(baseQuery, contextWithDefaults, queryId);
     Map<String, Object> finalContext = QueryContexts.override(contextWithDefaults, baseQuery.getContext());
+    applyCellContextDefaults(finalContext);
     QueryContexts.validateAndNormalizeCellContext(finalContext);
     finalContext.put(BaseQuery.QUERY_ID, queryId);
 
@@ -266,6 +267,67 @@ public class QueryLifecycle
         return;
       }
     }
+  }
+
+  private void applyCellContextDefaults(final Map<String, Object> finalContext)
+  {
+    final String resolvedIngressCell = resolveIngressCell(finalContext);
+    if (!finalContext.containsKey(QueryContexts.CTX_CELL) && resolvedIngressCell != null) {
+      finalContext.put(QueryContexts.CTX_CELL, resolvedIngressCell);
+    }
+    if (!finalContext.containsKey(QueryContexts.CTX_INGRESS_CELL) && resolvedIngressCell != null) {
+      finalContext.put(QueryContexts.CTX_INGRESS_CELL, resolvedIngressCell);
+    }
+    if (
+        !finalContext.containsKey(QueryContexts.CTX_CELL_EXECUTION_MODE)
+        && (finalContext.containsKey(QueryContexts.CTX_CELL) || resolvedIngressCell != null)
+    ) {
+      finalContext.put(QueryContexts.CTX_CELL_EXECUTION_MODE, QueryContexts.CellExecutionMode.STRICT_CELL.name());
+    }
+  }
+
+  @Nullable
+  private static String resolveIngressCell(final Map<String, Object> finalContext)
+  {
+    final String explicitIngressCell = QueryContexts.parseString(finalContext, QueryContexts.CTX_INGRESS_CELL);
+    if (!Strings.isNullOrEmpty(explicitIngressCell)) {
+      return explicitIngressCell.trim();
+    }
+
+    final String ingressIdentity = QueryContexts.parseString(finalContext, QueryContexts.CTX_INGRESS_IDENTITY);
+    if (Strings.isNullOrEmpty(ingressIdentity)) {
+      return null;
+    }
+
+    final Object rawIngressCellMap = finalContext.get(QueryContexts.CTX_INGRESS_CELL_MAP);
+    if (rawIngressCellMap == null) {
+      return null;
+    }
+    if (!(rawIngressCellMap instanceof Map)) {
+      throw QueryContexts.badTypeException(QueryContexts.CTX_INGRESS_CELL_MAP, "a Map", rawIngressCellMap);
+    }
+
+    final Object rawCell = ((Map<?, ?>) rawIngressCellMap).get(ingressIdentity);
+    if (rawCell == null) {
+      return null;
+    }
+    if (!(rawCell instanceof String)) {
+      throw QueryContexts.badTypeException(
+          StringUtils.format("%s[%s]", QueryContexts.CTX_INGRESS_CELL_MAP, ingressIdentity),
+          "a String",
+          rawCell
+      );
+    }
+
+    final String resolvedCell = ((String) rawCell).trim();
+    if (resolvedCell.isEmpty()) {
+      throw QueryContexts.badValueException(
+          StringUtils.format("%s[%s]", QueryContexts.CTX_INGRESS_CELL_MAP, ingressIdentity),
+          "a non-empty String",
+          rawCell
+      );
+    }
+    return resolvedCell;
   }
 
   /**
