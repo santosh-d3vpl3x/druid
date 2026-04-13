@@ -680,6 +680,102 @@ public class QueryLifecycleTest
   }
 
   @Test
+  public void testInitializeDefaultsCellContextFromIngressIdentity()
+  {
+    EasyMock.expect(queryConfig.getContext()).andReturn(
+        ImmutableMap.of(
+            QueryContexts.CTX_INGRESS_IDENTITY, "az1",
+            QueryContexts.CTX_INGRESS_CELL_MAP, ImmutableMap.of("az1", "  us-east-1a ")
+        )
+    ).anyTimes();
+    EasyMock.expect(conglomerate.getToolChest(EasyMock.anyObject()))
+            .andReturn(toolChest)
+            .times(1);
+
+    replayAll();
+
+    final TimeseriesQuery query = Druids.newTimeseriesQueryBuilder()
+                                        .dataSource(DATASOURCE)
+                                        .intervals(ImmutableList.of(Intervals.ETERNITY))
+                                        .aggregators(new CountAggregatorFactory("chocula"))
+                                        .build();
+
+    final QueryLifecycle lifecycle = createLifecycle();
+    lifecycle.initialize(query);
+
+    Assert.assertEquals("us-east-1a", lifecycle.getQuery().getContextValue(QueryContexts.CTX_CELL));
+    Assert.assertEquals("us-east-1a", lifecycle.getQuery().getContextValue(QueryContexts.CTX_INGRESS_CELL));
+    Assert.assertEquals(
+        QueryContexts.CellExecutionMode.STRICT_CELL.name(),
+        lifecycle.getQuery().getContextValue(QueryContexts.CTX_CELL_EXECUTION_MODE)
+    );
+  }
+
+  @Test
+  public void testInitializePreservesExplicitCellOverrides()
+  {
+    EasyMock.expect(queryConfig.getContext()).andReturn(
+        ImmutableMap.of(
+            QueryContexts.CTX_INGRESS_IDENTITY, "az1",
+            QueryContexts.CTX_INGRESS_CELL_MAP, ImmutableMap.of("az1", "us-east-1a")
+        )
+    ).anyTimes();
+    EasyMock.expect(conglomerate.getToolChest(EasyMock.anyObject()))
+            .andReturn(toolChest)
+            .times(1);
+
+    replayAll();
+
+    final TimeseriesQuery query = Druids.newTimeseriesQueryBuilder()
+                                        .dataSource(DATASOURCE)
+                                        .intervals(ImmutableList.of(Intervals.ETERNITY))
+                                        .aggregators(new CountAggregatorFactory("chocula"))
+                                        .context(
+                                            ImmutableMap.of(
+                                                QueryContexts.CTX_CELL, "us-west-2b",
+                                                QueryContexts.CTX_CELL_EXECUTION_MODE,
+                                                QueryContexts.CellExecutionMode.CELL_FAILOVER.name(),
+                                                QueryContexts.CTX_FAILOVER_REASON, "ops",
+                                                QueryContexts.CTX_FAILOVER_TICKET, "INC-123"
+                                            )
+                                        )
+                                        .build();
+
+    final QueryLifecycle lifecycle = createLifecycle();
+    lifecycle.initialize(query);
+
+    Assert.assertEquals("us-west-2b", lifecycle.getQuery().getContextValue(QueryContexts.CTX_CELL));
+    Assert.assertEquals(
+        QueryContexts.CellExecutionMode.CELL_FAILOVER.name(),
+        lifecycle.getQuery().getContextValue(QueryContexts.CTX_CELL_EXECUTION_MODE)
+    );
+  }
+
+  @Test
+  public void testInitializeRejectsInvalidDerivedIngressCellMapping()
+  {
+    expectedException.expect(BadQueryContextException.class);
+    expectedException.expectMessage("Expected key [ingressCellMap[az1]] to be a non-empty String");
+
+    EasyMock.expect(queryConfig.getContext()).andReturn(
+        ImmutableMap.of(
+            QueryContexts.CTX_INGRESS_IDENTITY, "az1",
+            QueryContexts.CTX_INGRESS_CELL_MAP, ImmutableMap.of("az1", "   ")
+        )
+    ).anyTimes();
+    replayAll();
+
+    final TimeseriesQuery query = Druids.newTimeseriesQueryBuilder()
+                                        .dataSource(DATASOURCE)
+                                        .intervals(ImmutableList.of(Intervals.ETERNITY))
+                                        .aggregators(new CountAggregatorFactory("chocula"))
+                                        .build();
+
+    final QueryLifecycle lifecycle = createLifecycle();
+    lifecycle.initialize(query);
+  }
+
+  @Test
   public void testInitializeRejectsInvalidCellContext()
   {
     expectedException.expect(BadQueryContextException.class);
