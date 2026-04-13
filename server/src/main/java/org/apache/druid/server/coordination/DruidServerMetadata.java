@@ -22,14 +22,19 @@ package org.apache.druid.server.coordination;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Preconditions;
+import org.apache.druid.java.util.common.logger.Logger;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  */
 public class DruidServerMetadata
 {
+  private static final Logger LOG = new Logger(DruidServerMetadata.class);
+  private static final AtomicBoolean LEGACY_CELL_WARNED = new AtomicBoolean(false);
+
   private final String name;
   @Nullable
   private final String hostAndPort;
@@ -38,6 +43,8 @@ public class DruidServerMetadata
   private final long maxSize;
   private final long storageSize;
   private final String tier;
+  @Nullable
+  private final String cell;
   private final ServerType type;
   private final int priority;
 
@@ -51,6 +58,7 @@ public class DruidServerMetadata
       @JsonProperty("storageSize") @Nullable Long storageSize,
       @JsonProperty("type") ServerType type,
       @JsonProperty("tier") String tier,
+      @JsonProperty("cell") @Nullable String cell,
       @JsonProperty("priority") int priority
   )
   {
@@ -61,8 +69,23 @@ public class DruidServerMetadata
     // for backwards compatibility, fill in storage size from max size
     this.storageSize = storageSize == null ? maxSize : storageSize;
     this.tier = tier;
+    this.cell = cell;
     this.type = type;
     this.priority = priority;
+  }
+
+  public DruidServerMetadata(
+      String name,
+      @Nullable String hostAndPort,
+      @Nullable String hostAndTlsPort,
+      long maxSize,
+      @Nullable Long storageSize,
+      ServerType type,
+      String tier,
+      int priority
+  )
+  {
+    this(name, hostAndPort, hostAndTlsPort, maxSize, storageSize, type, tier, null, priority);
   }
 
   @JsonProperty
@@ -106,6 +129,24 @@ public class DruidServerMetadata
   public String getTier()
   {
     return tier;
+  }
+
+  @Nullable
+  @JsonProperty
+  public String getCell()
+  {
+    return cell;
+  }
+
+  public String getRoutingCell()
+  {
+    if (cell == null) {
+      if (LEGACY_CELL_WARNED.compareAndSet(false, true)) {
+        LOG.warn("Discovery payload is missing `cell`; falling back to `tier` for routing.");
+      }
+      return tier;
+    }
+    return cell;
   }
 
   @JsonProperty
@@ -160,6 +201,9 @@ public class DruidServerMetadata
     if (!Objects.equals(tier, that.tier)) {
       return false;
     }
+    if (!Objects.equals(cell, that.cell)) {
+      return false;
+    }
     if (type != that.type) {
       return false;
     }
@@ -169,7 +213,7 @@ public class DruidServerMetadata
   @Override
   public int hashCode()
   {
-    return Objects.hash(name, hostAndPort, hostAndTlsPort, maxSize, storageSize, tier, type, priority);
+    return Objects.hash(name, hostAndPort, hostAndTlsPort, maxSize, storageSize, tier, cell, type, priority);
   }
 
   @Override
@@ -182,6 +226,7 @@ public class DruidServerMetadata
            ", maxSize=" + maxSize +
            ", storageSize=" + storageSize +
            ", tier='" + tier + '\'' +
+           ", cell='" + cell + '\'' +
            ", type=" + type +
            ", priority=" + priority +
            '}';

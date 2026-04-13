@@ -50,6 +50,9 @@ public class DruidServerConfig
   private int priority = DruidServer.DEFAULT_PRIORITY;
 
   @JsonProperty
+  private String cell = null;
+
+  @JsonProperty
   @NotNull
   private Set<String> hiddenProperties = Sets.newHashSet("druid.s3.accessKey", "druid.s3.secretKey",
                                                          "druid.metadata.storage.connector.password",
@@ -107,6 +110,11 @@ public class DruidServerConfig
   public int getPriority()
   {
     return priority;
+  }
+
+  public String getCell()
+  {
+    return cell;
   }
 
   public Set<String> getHiddenProperties()

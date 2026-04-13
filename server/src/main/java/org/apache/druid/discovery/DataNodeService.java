@@ -36,6 +36,8 @@ public class DataNodeService extends DruidService
   public static final String SERVER_TYPE_PROP_KEY = "serverType";
 
   private final String tier;
+  @Nullable
+  private final String cell;
   private final long maxSize;
   private final long storageSize;
   private final ServerType serverType;
@@ -45,13 +47,14 @@ public class DataNodeService extends DruidService
   @JsonCreator
   public static DataNodeService fromJson(
       @JsonProperty("tier") String tier,
+      @JsonProperty("cell") @Nullable String cell,
       @JsonProperty("maxSize") long maxSize,
       @JsonProperty("storageSize") @Nullable Long storageSize,
       @JsonProperty(SERVER_TYPE_PROP_KEY) ServerType serverType,
       @JsonProperty("priority") int priority
   )
   {
-    return new DataNodeService(tier, maxSize, storageSize, serverType, priority);
+    return new DataNodeService(tier, cell, maxSize, storageSize, serverType, priority);
   }
 
   public DataNodeService(
@@ -62,11 +65,24 @@ public class DataNodeService extends DruidService
       int priority
   )
   {
-    this(tier, maxSize, storageSize, serverType, priority, true);
+    this(tier, null, maxSize, storageSize, serverType, priority, true);
   }
 
   public DataNodeService(
       String tier,
+      @Nullable String cell,
+      long maxSize,
+      @Nullable Long storageSize,
+      ServerType serverType,
+      int priority
+  )
+  {
+    this(tier, cell, maxSize, storageSize, serverType, priority, true);
+  }
+
+  public DataNodeService(
+      String tier,
+      @Nullable String cell,
       long maxSize,
       @Nullable Long storageSize,
       ServerType serverType,
@@ -75,6 +91,7 @@ public class DataNodeService extends DruidService
   )
   {
     this.tier = tier;
+    this.cell = cell;
     this.maxSize = maxSize;
     this.storageSize = storageSize == null ? maxSize : storageSize;
     this.serverType = serverType;
@@ -93,6 +110,13 @@ public class DataNodeService extends DruidService
   public String getTier()
   {
     return tier;
+  }
+
+  @Nullable
+  @JsonProperty
+  public String getCell()
+  {
+    return cell;
   }
 
   @JsonProperty
@@ -140,13 +164,14 @@ public class DataNodeService extends DruidService
            storageSize == that.storageSize &&
            priority == that.priority &&
            Objects.equals(tier, that.tier) &&
+           Objects.equals(cell, that.cell) &&
            serverType == that.serverType;
   }
 
   @Override
   public int hashCode()
   {
-    return Objects.hash(tier, maxSize, storageSize, serverType, priority);
+    return Objects.hash(tier, cell, maxSize, storageSize, serverType, priority);
   }
 
   @Override
@@ -154,6 +179,7 @@ public class DataNodeService extends DruidService
   {
     return "DataNodeService{" +
            "tier='" + tier + '\'' +
+           ", cell='" + cell + '\'' +
            ", maxSize=" + maxSize +
            ", storageSize=" + storageSize +
            ", serverType=" + serverType +

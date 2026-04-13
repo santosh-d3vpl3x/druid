@@ -69,8 +69,23 @@ public class DruidServer implements Comparable<DruidServer>
         config.getStorageSize(),
         type,
         config.getTier(),
+        config.getCell(),
         DEFAULT_PRIORITY
     );
+  }
+
+  public DruidServer(
+      String name,
+      String hostAndPort,
+      String hostAndTlsPort,
+      long maxSize,
+      @Nullable Long storageSize,
+      ServerType type,
+      String tier,
+      int priority
+  )
+  {
+    this(name, hostAndPort, hostAndTlsPort, maxSize, storageSize, type, tier, null, priority);
   }
 
   @JsonCreator
@@ -82,10 +97,11 @@ public class DruidServer implements Comparable<DruidServer>
       @JsonProperty("storageSize") @Nullable Long storageSize,
       @JsonProperty("type") ServerType type,
       @JsonProperty("tier") String tier,
+      @JsonProperty("cell") @Nullable String cell,
       @JsonProperty("priority") int priority
   )
   {
-    this(new DruidServerMetadata(name, hostAndPort, hostAndTlsPort, maxSize, storageSize, type, tier, priority));
+    this(new DruidServerMetadata(name, hostAndPort, hostAndTlsPort, maxSize, storageSize, type, tier, cell, priority));
   }
 
   public DruidServer(DruidServerMetadata metadata)
@@ -148,6 +164,13 @@ public class DruidServer implements Comparable<DruidServer>
   public String getTier()
   {
     return metadata.getTier();
+  }
+
+  @Nullable
+  @JsonProperty
+  public String getCell()
+  {
+    return metadata.getCell();
   }
 
   public boolean isSegmentReplicationTarget()

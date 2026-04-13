@@ -208,6 +208,7 @@ public class HttpServerInventoryView implements ServerInventoryView, FilteredSer
                       0L,
                       ServerType.fromNodeRole(node.getNodeRole()),
                       DruidServer.DEFAULT_TIER,
+                      null,
                       DruidServer.DEFAULT_PRIORITY
                   );
                 }
@@ -219,6 +220,7 @@ public class HttpServerInventoryView implements ServerInventoryView, FilteredSer
                     dataNodeService.getStorageSize(),
                     dataNodeService.getServerType(),
                     dataNodeService.getTier(),
+                    dataNodeService.getCell(),
                     dataNodeService.getPriority()
                 );
               }
